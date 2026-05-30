@@ -1,0 +1,36 @@
+const mongoose = require("mongoose");
+
+const commentSchema = new mongoose.Schema(
+  {
+    videoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Video",
+      required: true,
+      index: true,
+    },
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+    parentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Comment",
+      default: null,
+      index: true,
+    },
+    text: { type: String, required: true, maxlength: 1000 },
+    likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    replyCount: { type: Number, default: 0 },
+    isEdited: { type: Boolean, default: false },
+    isDeleted: { type: Boolean, default: false },
+    isHidden: { type: Boolean, default: false }, // admin hidden
+    reportCount: { type: Number, default: 0 },
+  },
+  { timestamps: true },
+);
+
+commentSchema.index({ videoId: 1, parentId: 1, createdAt: -1 });
+
+module.exports = mongoose.model("Comment", commentSchema);
