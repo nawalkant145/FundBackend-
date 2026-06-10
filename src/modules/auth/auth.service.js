@@ -27,11 +27,22 @@ const issueTokens = async (user) => {
   return { accessToken, refreshToken };
 };
 
-const registerUser = async ({ name, email, password, role }) => {
+const registerUser = async ({ name, email, password, role, phone, companyName, industry, fundingStage, website, linkedIn, preferredIndustries, preferredStages, investmentThesis }) => {
   const existing = await User.findOne({ email });
   if (existing) throw new ApiError(409, "Email already registered");
 
-  const user = await User.create({ name, email, password, role });
+  const userData = { name, email, password, role, isEmailVerified: true, verificationLevel: 1 };
+  if (phone) userData.phone = phone;
+  if (companyName) userData.companyName = companyName;
+  if (industry) userData.industry = industry;
+  if (fundingStage) userData.fundingStage = fundingStage;
+  if (website) userData.website = website;
+  if (linkedIn) userData.linkedIn = linkedIn;
+  if (preferredIndustries?.length) userData.preferredIndustries = preferredIndustries;
+  if (preferredStages?.length) userData.preferredStages = preferredStages;
+  if (investmentThesis) userData.investmentThesis = investmentThesis;
+
+  const user = await User.create(userData);
   const tokens = await issueTokens(user);
   return { user: user.toSafeJSON(), ...tokens };
 };
@@ -83,6 +94,66 @@ const refreshAccessToken = async (refreshToken) => {
 };
 
 // ─── Email OTP ─────────────────────────────────
+
+// Pre-register: send OTP to email before account exists (for signup verification)
+const sendPreRegisterOtp = async (email) => {
+  if (!email) throw new ApiError(400, "Email required");
+  const existing = await User.findOne({ email });
+  if (existing) throw new ApiError(409, "Email already registered");
+
+  const otp = generateOtp();
+  const hash = await hashOtp(otp);
+  const expires = new Date(Date.now() + OTP_EXPIRY_MS);
+
+  // Store in Redis temporarily (not in DB since user doesn't exist yet)
+  const { getClient } = require("../../config/redis");
+  const redis = getClient();
+  await redis.set(
+    `preregister:${email}`,
+    JSON.stringify({ otpHash: hash, expires: expires.toISOString() }),
+    "EX",
+    600 // 10 minutes
+  );
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`\n📧 PRE-REGISTER OTP for ${email}: ${otp}\n`);
+  }
+
+  await sendEmail({
+    to: email,
+    subject: "Your EXPGLO FUND verification code",
+    html: otpEmailHtml(otp),
+    text: `Your verification code: ${otp} (valid 10 min)`,
+  });
+
+  return { sent: true };
+};
+
+// Verify pre-register OTP (before account creation)
+const verifyPreRegisterOtp = async (email, otp) => {
+  if (!email || !otp) throw new ApiError(400, "Email and OTP required");
+
+  const { getClient } = require("../../config/redis");
+  const redis = getClient();
+  const raw = await redis.get(`preregister:${email}`);
+  if (!raw) throw new ApiError(400, "No OTP requested or expired");
+
+  const { otpHash, expires } = JSON.parse(raw);
+  if (new Date(expires) < new Date()) {
+    await redis.del(`preregister:${email}`);
+    throw new ApiError(400, "OTP expired");
+  }
+
+  const ok = await compareOtp(otp, otpHash);
+  if (!ok) throw new ApiError(400, "Invalid OTP");
+
+  // Mark as verified in Redis (will be checked during register)
+  await redis.set(`preregister:verified:${email}`, "1", "EX", 1800); // 30 min to complete signup
+  await redis.del(`preregister:${email}`);
+
+  return { verified: true };
+};
+
 const sendEmailOtp = async (userId) => {
   const user = await User.findById(userId).select(
     "+emailOtpHash +emailOtpExpires",
@@ -96,6 +167,11 @@ const sendEmailOtp = async (userId) => {
   user.emailOtpHash = await hashOtp(otp);
   user.emailOtpExpires = new Date(Date.now() + OTP_EXPIRY_MS);
   await user.save({ validateBeforeSave: false });
+
+  // Always log OTP in dev so you can test without real email delivery
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`\n📧 EMAIL OTP for ${user.email}: ${otp}\n`);
+  }
 
   await sendEmail({
     to: user.email,
@@ -243,6 +319,8 @@ module.exports = {
   loginUser,
   logoutUser,
   refreshAccessToken,
+  sendPreRegisterOtp,
+  verifyPreRegisterOtp,
   sendEmailOtp,
   verifyEmailOtp,
   sendPhoneOtp,

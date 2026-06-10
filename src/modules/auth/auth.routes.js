@@ -10,6 +10,10 @@ router.post("/refresh-token", c.refresh);
 router.post("/forgot-password", authLimiter, c.forgotPassword);
 router.post("/reset-password", authLimiter, c.resetPassword);
 
+// Pre-register email verification (no auth needed)
+router.post("/send-pre-register-otp", authLimiter, c.sendPreRegisterOtp);
+router.post("/verify-pre-register-otp", authLimiter, c.verifyPreRegisterOtp);
+
 router.post("/logout", authenticate, c.logout);
 router.get("/me", authenticate, c.getMe);
 

@@ -22,6 +22,9 @@ const sendEmail = async ({ to, subject, html, text }) => {
   }
 
   const result = await client.emails.send({ from, to, subject, html, text });
+  if (result.error) {
+    console.warn("⚠️  Resend API error:", result.error);
+  }
   return result;
 };
 

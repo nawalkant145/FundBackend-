@@ -30,15 +30,39 @@ const clearAuthCookies = (res) => {
 
 const register = asyncHandler(async (req, res) => {
   validateRegister(req.body);
-  const { name, email, password, role } = req.body;
+  const { name, email, password, role, phone, companyName, industry, fundingStage, website, linkedIn, preferredIndustries, preferredStages, investmentThesis } = req.body;
+
+  // Check that email was pre-verified via OTP
+  const { getClient } = require("../../config/redis");
+  const redis = getClient();
+  const verified = await redis.get(`preregister:verified:${email}`);
+  if (!verified) {
+    throw new ApiError(403, "Email not verified. Please verify your email first.");
+  }
+
   const result = await authService.registerUser({
-    name,
-    email,
-    password,
-    role,
+    name, email, password, role, phone, companyName, industry, fundingStage, website, linkedIn, preferredIndustries, preferredStages, investmentThesis,
   });
+
+  // Clean up the verification flag
+  await redis.del(`preregister:verified:${email}`);
+
   setAuthCookies(res, result.accessToken, result.refreshToken);
   res.status(201).json(new ApiResponse(201, result, "Registration successful"));
+});
+
+// Pre-register: send OTP to verify email before account creation
+const sendPreRegisterOtp = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  const result = await authService.sendPreRegisterOtp(email);
+  res.status(200).json(new ApiResponse(200, result, "OTP sent to email"));
+});
+
+// Verify pre-register OTP
+const verifyPreRegisterOtp = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+  const result = await authService.verifyPreRegisterOtp(email, otp);
+  res.status(200).json(new ApiResponse(200, result, "Email verified"));
 });
 
 const login = asyncHandler(async (req, res) => {
@@ -125,6 +149,8 @@ module.exports = {
   logout,
   refresh,
   getMe,
+  sendPreRegisterOtp,
+  verifyPreRegisterOtp,
   sendEmailOtp,
   verifyEmailOtp,
   sendPhoneOtp,
