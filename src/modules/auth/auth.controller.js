@@ -30,18 +30,55 @@ const clearAuthCookies = (res) => {
 
 const register = asyncHandler(async (req, res) => {
   validateRegister(req.body);
-  const { name, email, password, role, phone, companyName, industry, fundingStage, website, linkedIn, preferredIndustries, preferredStages, investmentThesis } = req.body;
+  const {
+    name,
+    username,
+    email,
+    password,
+    role,
+    phone,
+    country,
+    companyName,
+    industry,
+    fundingStage,
+    website,
+    linkedIn,
+    investorType,
+    investmentRange,
+    preferredIndustries,
+    preferredStages,
+    investmentThesis,
+  } = req.body;
 
   // Check that email was pre-verified via OTP
   const { getClient } = require("../../config/redis");
   const redis = getClient();
   const verified = await redis.get(`preregister:verified:${email}`);
   if (!verified) {
-    throw new ApiError(403, "Email not verified. Please verify your email first.");
+    throw new ApiError(
+      403,
+      "Email not verified. Please verify your email first.",
+    );
   }
 
   const result = await authService.registerUser({
-    name, email, password, role, phone, companyName, industry, fundingStage, website, linkedIn, preferredIndustries, preferredStages, investmentThesis,
+    name,
+    username,
+    email,
+    password,
+    role,
+    phone,
+    country,
+    companyName,
+    industry,
+    fundingStage,
+    website,
+    linkedIn,
+    investorType,
+    investmentRange,
+    preferredIndustries,
+    preferredStages,
+    investmentThesis,
   });
 
   // Clean up the verification flag
@@ -49,6 +86,17 @@ const register = asyncHandler(async (req, res) => {
 
   setAuthCookies(res, result.accessToken, result.refreshToken);
   res.status(201).json(new ApiResponse(201, result, "Registration successful"));
+});
+
+// Live availability check for username / email / phone
+const checkAvailability = asyncHandler(async (req, res) => {
+  const { username, email, phone } = req.query;
+  const result = await authService.checkAvailability({
+    username,
+    email,
+    phone,
+  });
+  res.status(200).json(new ApiResponse(200, result, "Availability"));
 });
 
 // Pre-register: send OTP to verify email before account creation
@@ -67,8 +115,8 @@ const verifyPreRegisterOtp = asyncHandler(async (req, res) => {
 
 const login = asyncHandler(async (req, res) => {
   validateLogin(req.body);
-  const { email, password } = req.body;
-  const result = await authService.loginUser({ email, password });
+  const { identifier, email, password } = req.body;
+  const result = await authService.loginUser({ identifier, email, password });
   setAuthCookies(res, result.accessToken, result.refreshToken);
   res.status(200).json(new ApiResponse(200, result, "Login successful"));
 });
@@ -145,6 +193,7 @@ const changePassword = asyncHandler(async (req, res) => {
 
 module.exports = {
   register,
+  checkAvailability,
   login,
   logout,
   refresh,

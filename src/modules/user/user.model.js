@@ -4,6 +4,17 @@ const bcrypt = require("bcryptjs");
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
+    username: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+      minlength: 3,
+      maxlength: 20,
+      match: /^[a-z0-9_]+$/,
+      index: true,
+    },
     email: {
       type: String,
       required: true,
@@ -21,7 +32,8 @@ const userSchema = new mongoose.Schema(
     },
     avatar: { type: String, default: "" },
     avatarPublicId: { type: String, default: "" },
-    phone: { type: String, default: "" },
+    phone: { type: String, default: "", index: true },
+    country: { type: String, default: "" },
     bio: { type: String, default: "" },
 
     // Verification
@@ -64,6 +76,11 @@ const userSchema = new mongoose.Schema(
     openToConnect: { type: Boolean, default: true },
 
     // Investor fields
+    investorType: {
+      type: String,
+      enum: ["", "individual", "angel", "vc", "family-office"],
+      default: "",
+    },
     investmentRange: {
       min: { type: Number, default: 0 },
       max: { type: Number, default: 0 },

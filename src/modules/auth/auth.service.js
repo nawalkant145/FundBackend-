@@ -27,18 +27,69 @@ const issueTokens = async (user) => {
   return { accessToken, refreshToken };
 };
 
-const registerUser = async ({ name, email, password, role, phone, companyName, industry, fundingStage, website, linkedIn, preferredIndustries, preferredStages, investmentThesis }) => {
-  const existing = await User.findOne({ email });
-  if (existing) throw new ApiError(409, "Email already registered");
+const registerUser = async ({
+  name,
+  username,
+  email,
+  password,
+  role,
+  phone,
+  country,
+  companyName,
+  industry,
+  fundingStage,
+  website,
+  linkedIn,
+  investorType,
+  investmentRange,
+  preferredIndustries,
+  preferredStages,
+  investmentThesis,
+}) => {
+  email = email.toLowerCase().trim();
+  username = (username || "").toLowerCase().trim();
 
-  const userData = { name, email, password, role, isEmailVerified: true, verificationLevel: 1 };
+  // Field-specific duplicate checks → clear messages for the UI
+  if (await User.findOne({ email })) {
+    throw new ApiError(409, "Email already registered", {
+      field: "email",
+      message: "This email is already in use",
+    });
+  }
+  if (username && (await User.findOne({ username }))) {
+    throw new ApiError(409, "Username taken", {
+      field: "username",
+      message: "This username is already taken",
+    });
+  }
+  if (phone && (await User.findOne({ phone }))) {
+    throw new ApiError(409, "Phone already registered", {
+      field: "phone",
+      message: "This phone number is already in use",
+    });
+  }
+
+  const userData = {
+    name,
+    username,
+    email,
+    password,
+    role,
+    isEmailVerified: true,
+    verificationLevel: 1,
+  };
   if (phone) userData.phone = phone;
+  if (country) userData.country = country;
   if (companyName) userData.companyName = companyName;
   if (industry) userData.industry = industry;
   if (fundingStage) userData.fundingStage = fundingStage;
   if (website) userData.website = website;
   if (linkedIn) userData.linkedIn = linkedIn;
-  if (preferredIndustries?.length) userData.preferredIndustries = preferredIndustries;
+  if (investorType) userData.investorType = investorType;
+  if (investmentRange && (investmentRange.min || investmentRange.max))
+    userData.investmentRange = investmentRange;
+  if (preferredIndustries?.length)
+    userData.preferredIndustries = preferredIndustries;
   if (preferredStages?.length) userData.preferredStages = preferredStages;
   if (investmentThesis) userData.investmentThesis = investmentThesis;
 
@@ -47,9 +98,42 @@ const registerUser = async ({ name, email, password, role, phone, companyName, i
   return { user: user.toSafeJSON(), ...tokens };
 };
 
-const loginUser = async ({ email, password }) => {
-  const user = await User.findOne({ email }).select("+password +refreshToken");
-  if (!user) throw new ApiError(401, "Invalid email or password");
+// Check whether a username / email / phone is already taken.
+const checkAvailability = async ({ username, email, phone }) => {
+  const result = {};
+  if (username) {
+    const u = username.toLowerCase().trim();
+    if (!/^[a-z0-9_]{3,20}$/.test(u)) result.username = "invalid";
+    else
+      result.username = (await User.findOne({ username: u }))
+        ? "taken"
+        : "available";
+  }
+  if (email) {
+    const e = email.toLowerCase().trim();
+    result.email = (await User.findOne({ email: e })) ? "taken" : "available";
+  }
+  if (phone) {
+    result.phone = (await User.findOne({ phone: phone.trim() }))
+      ? "taken"
+      : "available";
+  }
+  return result;
+};
+
+const loginUser = async ({ identifier, email, password }) => {
+  const raw = (identifier || email || "").trim();
+  let query;
+  if (raw.includes("@")) {
+    query = { email: raw.toLowerCase() };
+  } else if (/^\+?\d[\d\s-]{5,}$/.test(raw)) {
+    query = { phone: raw };
+  } else {
+    query = { username: raw.toLowerCase() };
+  }
+
+  const user = await User.findOne(query).select("+password +refreshToken");
+  if (!user) throw new ApiError(401, "Invalid credentials");
   if (user.isBanned) throw new ApiError(403, "Your account has been banned");
   if (!user.isActive) throw new ApiError(403, "Your account is inactive");
 
@@ -66,7 +150,7 @@ const loginUser = async ({ email, password }) => {
       user.loginAttempts = 0;
     }
     await user.save({ validateBeforeSave: false });
-    throw new ApiError(401, "Invalid email or password");
+    throw new ApiError(401, "Invalid credentials");
   }
 
   user.loginAttempts = 0;
@@ -112,7 +196,7 @@ const sendPreRegisterOtp = async (email) => {
     `preregister:${email}`,
     JSON.stringify({ otpHash: hash, expires: expires.toISOString() }),
     "EX",
-    600 // 10 minutes
+    600, // 10 minutes
   );
 
   if (process.env.NODE_ENV !== "production") {
@@ -126,7 +210,10 @@ const sendPreRegisterOtp = async (email) => {
     text: `Your verification code: ${otp} (valid 10 min)`,
   });
 
-  return { sent: true };
+  // In dev, return the OTP so it can be shown on screen (no real email needed)
+  return process.env.NODE_ENV !== "production"
+    ? { sent: true, devOtp: otp }
+    : { sent: true };
 };
 
 // Verify pre-register OTP (before account creation)
@@ -180,7 +267,9 @@ const sendEmailOtp = async (userId) => {
     text: `Your verification code: ${otp} (valid 10 min)`,
   });
 
-  return { sent: true };
+  return process.env.NODE_ENV !== "production"
+    ? { sent: true, devOtp: otp }
+    : { sent: true };
 };
 
 const verifyEmailOtp = async (userId, otp) => {
@@ -223,8 +312,14 @@ const sendPhoneOtp = async (userId, phone) => {
   user.isPhoneVerified = false;
   await user.save({ validateBeforeSave: false });
 
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`\n📱 PHONE OTP for ${phone}: ${otp}\n`);
+  }
+
   await sendSms({ phone, otp });
-  return { sent: true };
+  return process.env.NODE_ENV !== "production"
+    ? { sent: true, devOtp: otp }
+    : { sent: true };
 };
 
 const verifyPhoneOtp = async (userId, otp) => {
@@ -317,6 +412,7 @@ const changePassword = async (userId, oldPassword, newPassword) => {
 module.exports = {
   registerUser,
   loginUser,
+  checkAvailability,
   logoutUser,
   refreshAccessToken,
   sendPreRegisterOtp,

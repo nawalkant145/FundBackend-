@@ -3,10 +3,15 @@ const ApiError = require("../../utils/ApiError");
 
 const validateRegister = (data) => {
   const errors = [];
-  const { name, email, password, role } = data;
+  const { name, username, email, password, role } = data;
 
   if (!name || typeof name !== "string" || name.trim().length < 2) {
     errors.push("Name must be at least 2 characters");
+  }
+  if (!username || !/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+    errors.push(
+      "Username must be 3-20 characters (letters, numbers, underscore)",
+    );
   }
   if (!email || !validator.isEmail(email)) {
     errors.push("Valid email is required");
@@ -23,10 +28,12 @@ const validateRegister = (data) => {
 
 const validateLogin = (data) => {
   const errors = [];
-  const { email, password } = data;
+  const { identifier, email, password } = data;
 
-  if (!email || !validator.isEmail(email)) {
-    errors.push("Valid email is required");
+  // Login accepts a username, email, or phone via `identifier`
+  // (falls back to `email` for backward compatibility).
+  if (!identifier && !email) {
+    errors.push("Username, email, or phone is required");
   }
   if (!password) {
     errors.push("Password is required");
