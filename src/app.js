@@ -95,6 +95,11 @@ app.get("/api/health", async (req, res) => {
 app.use("/api", apiRoutes);
 app.use("/api/v1", apiRoutes);
 
+// ─── Health check (silences Render/UptimeRobot 404 on root) ──
+app.get("/", (req, res) => {
+  res.status(200).json({ status: "ok", service: "EXPGLO FUND API" });
+});
+
 // ─── 404 + Error Handlers (must be last) ───────
 app.use(notFound);
 app.use(errorHandler);
