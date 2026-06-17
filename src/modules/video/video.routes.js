@@ -25,12 +25,12 @@ router.delete("/:id", authorize("founder"), c.remove);
 router.post("/:id/renew", authorize("founder"), c.renew);
 router.post("/:id/pause-toggle", authorize("founder"), c.togglePause);
 
-// Investor routes
-router.get("/feed", authorize("investor"), c.feed);
-router.get("/saved", authorize("investor"), c.savedPitches);
-router.post("/:id/like", authorize("investor"), c.like);
-router.post("/:id/save", authorize("investor"), c.save);
-router.post("/:id/not-interested", authorize("investor"), c.notInterested);
+// Feed & engagement routes (both founders and investors can browse and interact)
+router.get("/feed", c.feed);
+router.get("/saved", c.savedPitches);
+router.post("/:id/like", c.like);
+router.post("/:id/save", c.save);
+router.post("/:id/not-interested", c.notInterested);
 
 // Both
 router.get("/trending", c.trending);
