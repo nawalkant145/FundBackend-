@@ -20,17 +20,33 @@ app.set("trust proxy", 1); // for accurate IPs behind Railway/Vercel proxy
 app.use(helmet());
 
 // CORS
+const DEFAULT_ORIGINS = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://expglofunds.netlify.app",
+  "https://expglobusiness.com",
+  "https://www.expglobusiness.com",
+  "https://expglofund.web.app",
+  "https://expglofund.firebaseapp.com",
+];
+
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
   .map((o) => o.trim())
   .filter(Boolean);
 
+// Merge env origins with hardcoded defaults (so it works even without env var)
+const allOrigins = [...new Set([...DEFAULT_ORIGINS, ...allowedOrigins])];
+
 app.use(
   cors({
     origin: (origin, cb) => {
+      // Allow requests with no origin (mobile apps, server-to-server, curl)
       if (!origin) return cb(null, true);
-      if (allowedOrigins.length === 0) return cb(null, true);
-      if (allowedOrigins.includes(origin)) return cb(null, true);
+      if (allOrigins.includes(origin)) return cb(null, true);
+      // In dev, allow everything
+      if (process.env.NODE_ENV !== "production") return cb(null, true);
+      console.warn(`CORS blocked: ${origin}`);
       return cb(new Error(`CORS blocked: ${origin}`));
     },
     credentials: true,
