@@ -19,12 +19,18 @@ const videoSchema = new mongoose.Schema(
     fundingStage: { type: String, default: "", index: true },
     askAmount: { type: Number, default: 0 },
     equityOffered: { type: Number, default: 0 },
+    visibility: {
+      type: String,
+      enum: ["everyone", "investors-only"],
+      default: "everyone",
+    },
 
     views: { type: Number, default: 0 },
     uniqueViews: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     saves: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     notInterested: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    commentCount: { type: Number, default: 0 },
 
     watchTimeData: [
       {
@@ -36,11 +42,19 @@ const videoSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["processing", "active", "paused", "expired", "rejected"],
+      enum: [
+        "processing",
+        "active",
+        "paused",
+        "expired",
+        "rejected",
+        "deleted",
+      ],
       default: "processing",
       index: true,
     },
     rejectionReason: { type: String, default: "" },
+    deletedAt: { type: Date, default: null },
     expiresAt: { type: Date, index: true },
     isRenewed: { type: Boolean, default: false },
     isBoosted: { type: Boolean, default: false },

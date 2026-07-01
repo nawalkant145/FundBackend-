@@ -6,6 +6,8 @@ const {
   deleteFromCloudinary,
 } = require("../../utils/cloudinaryUpload");
 const { getClient } = require("../../config/redis");
+const { cleanText } = require("../../utils/profanityFilter");
+const settingsService = require("../settings/settings.service");
 
 const MIN_DURATION = 60;
 const MAX_DURATION = 120;
@@ -17,6 +19,13 @@ const FEED_PAGE_SIZE = 5;
 
 const uploadPitch = async (founderId, file, body) => {
   if (!file) throw new ApiError(400, "Video file required");
+
+  const settings = await settingsService.getSettings().catch(() => ({}));
+  if (settings.uploadsEnabled === false) {
+    throw new ApiError(403, "Pitch uploads are temporarily disabled by admin");
+  }
+  const maxPitches = settings.maxPitchesPerFounder || MAX_TOTAL_PITCHES;
+  const expiryDays = settings.pitchExpiryDays || PITCH_EXPIRY_DAYS;
 
   const founder = await User.findById(founderId);
   if (!founder) throw new ApiError(404, "Founder not found");
@@ -31,8 +40,8 @@ const uploadPitch = async (founderId, file, body) => {
     founderId,
     status: { $in: ["active", "processing", "paused"] },
   });
-  if (totalPitches >= MAX_TOTAL_PITCHES) {
-    throw new ApiError(400, `Max ${MAX_TOTAL_PITCHES} active pitches allowed`);
+  if (totalPitches >= maxPitches) {
+    throw new ApiError(400, `Max ${maxPitches} active pitches allowed`);
   }
 
   const activePitch = await Video.findOne({ founderId, status: "active" });
@@ -63,14 +72,17 @@ const uploadPitch = async (founderId, file, body) => {
     .replace("/video/upload/", "/video/upload/so_1,w_640,h_360,c_fill/")
     .replace(/\.[^.]+$/, ".jpg");
 
-  const expiresAt = new Date(
-    Date.now() + PITCH_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
-  );
+  const expiresAt = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000);
+
+  const filterOn = settings.profanityFilterEnabled !== false;
+  const extraWords = settings.customBannedWords || [];
 
   const video = await Video.create({
     founderId,
-    title: body.title,
-    description: body.description,
+    title: filterOn ? cleanText(body.title, extraWords) : body.title,
+    description: filterOn
+      ? cleanText(body.description || "", extraWords)
+      : body.description || "",
     videoUrl: uploaded.url,
     hlsUrl,
     thumbnailUrl,
@@ -80,12 +92,28 @@ const uploadPitch = async (founderId, file, body) => {
     fundingStage: body.fundingStage || founder.fundingStage,
     askAmount: Number(body.askAmount) || 0,
     equityOffered: Number(body.equityOffered) || 0,
+    visibility:
+      body.visibility === "investors-only" ? "investors-only" : "everyone",
     status: "active",
     expiresAt,
   });
 
   founder.activePitchId = video._id;
   await founder.save({ validateBeforeSave: false });
+
+  // Auto-flag title/description for admin review if they had profanity
+  try {
+    const moderation = require("../moderation/moderation.service");
+    moderation
+      .flagIfNeeded({
+        contentType: "video",
+        contentId: video._id,
+        authorId: founderId,
+        text: `${body.title || ""} ${body.description || ""}`,
+        extraWords,
+      })
+      .catch(() => {});
+  } catch {}
 
   // Invalidate feed cache
   await invalidateFeedCache();
@@ -102,26 +130,42 @@ const invalidateFeedCache = async () => {
   }
 };
 
-const buildFeedQuery = async (investorId) => {
-  const investor = await User.findById(investorId);
-  if (!investor) throw new ApiError(404, "Investor not found");
+// Invalidate only a specific user's feed cache entries
+const invalidateUserFeedCache = async (userId) => {
+  try {
+    const redis = getClient();
+    const keys = await redis.keys(`feed:${userId}:*`);
+    if (keys.length) await redis.del(...keys);
+  } catch (e) {
+    console.warn("⚠️  User feed cache invalidate failed:", e.message);
+  }
+};
 
-  const blocked = investor.blockedUsers || [];
+const buildFeedQuery = async (userId) => {
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "User not found");
+
+  const blocked = user.blockedUsers || [];
   const seen = await Video.find({
-    $or: [{ likes: investorId }, { notInterested: investorId }],
+    $or: [{ notInterested: userId }],
   }).distinct("_id");
 
   const query = {
     status: "active",
     expiresAt: { $gt: new Date() },
     _id: { $nin: seen },
-    founderId: { $nin: blocked },
+    founderId: { $nin: blocked }, // exclude blocked users only (NOT self)
   };
 
-  if (investor.preferredIndustries?.length) {
+  // Founders can only see pitches marked "everyone" (not "investors-only")
+  if (user.role === "founder") {
+    query.visibility = { $ne: "investors-only" };
+  }
+
+  if (user.preferredIndustries?.length) {
     query.$or = [
-      { industry: { $in: investor.preferredIndustries } },
-      { industry: "" }, // include uncategorized too
+      { industry: { $in: user.preferredIndustries } },
+      { industry: "" },
     ];
   }
   return query;
@@ -152,7 +196,39 @@ const getFeed = async (investorId, { cursor, limit = FEED_PAGE_SIZE } = {}) => {
   const items = hasMore ? videos.slice(0, limit) : videos;
   const nextCursor = hasMore ? items[items.length - 1]._id : null;
 
-  const result = { videos: items, nextCursor, hasMore };
+  // Compute accurate comment counts for the videos in this page
+  const Comment = require("../comment/comment.model");
+  const videoIds = items.map((v) => v._id);
+  const commentCounts = {};
+  try {
+    const counts = await Comment.aggregate([
+      {
+        $match: {
+          videoId: { $in: videoIds },
+          parentId: null,
+          isDeleted: false,
+          isHidden: false,
+        },
+      },
+      { $group: { _id: "$videoId", count: { $sum: 1 } } },
+    ]);
+    counts.forEach((c) => {
+      commentCounts[c._id.toString()] = c.count;
+    });
+  } catch {}
+
+  // Add isLiked / isSaved booleans + accurate counts for the requesting user
+  const uid = investorId.toString();
+  const enriched = items.map((v) => ({
+    ...v,
+    isLiked: (v.likes || []).some((id) => id.toString() === uid),
+    isSaved: (v.saves || []).some((id) => id.toString() === uid),
+    likeCount: (v.likes || []).length,
+    saveCount: (v.saves || []).length,
+    commentCount: commentCounts[v._id.toString()] ?? v.commentCount ?? 0,
+  }));
+
+  const result = { videos: enriched, nextCursor, hasMore };
 
   try {
     const redis = getClient();
@@ -168,6 +244,22 @@ const getVideoById = async (videoId) => {
     "name avatar companyName industry isVerified bio website linkedIn",
   );
   if (!video) throw new ApiError(404, "Video not found");
+
+  // Ensure commentCount is accurate (backfill for legacy videos)
+  try {
+    const Comment = require("../comment/comment.model");
+    const realCount = await Comment.countDocuments({
+      videoId: video._id,
+      parentId: null,
+      isDeleted: false,
+      isHidden: false,
+    });
+    if (video.commentCount !== realCount) {
+      video.commentCount = realCount;
+      await video.save({ validateBeforeSave: false });
+    }
+  } catch {}
+
   return video;
 };
 
@@ -182,6 +274,9 @@ const updateVideo = async (videoId, founderId, updates) => {
   const sanitized = {};
   for (const k of allowed)
     if (updates[k] !== undefined) sanitized[k] = updates[k];
+  if (sanitized.title) sanitized.title = cleanText(sanitized.title);
+  if (sanitized.description)
+    sanitized.description = cleanText(sanitized.description);
 
   const video = await Video.findOneAndUpdate(
     { _id: videoId, founderId },
@@ -223,6 +318,9 @@ const likeVideo = async (videoId, investorId) => {
   }
   await video.save();
 
+  // Invalidate this user's feed cache so refreshed page reflects the like
+  await invalidateUserFeedCache(investorId);
+
   // Notify founder on new like
   if (!liked && video.founderId.toString() !== investorId.toString()) {
     try {
@@ -258,6 +356,9 @@ const saveVideo = async (videoId, investorId) => {
     video.saves.push(investorId);
   }
   await video.save();
+
+  // Invalidate this user's feed cache so refreshed page reflects the save
+  await invalidateUserFeedCache(investorId);
 
   // Notify founder on new save
   if (!saved && video.founderId.toString() !== investorId.toString()) {
@@ -301,13 +402,8 @@ const logView = async (videoId, investorId, watchedSeconds = 0) => {
   );
   if (isUnique) video.uniqueViews.push(investorId);
 
-  // Use Redis INCR for total views to reduce DB writes
-  try {
-    const redis = getClient();
-    await redis.incr(`video:views:${videoId}`);
-  } catch {
-    video.views += 1;
-  }
+  // Increment total view count in the DB so it shows in feeds/analytics.
+  video.views = (video.views || 0) + 1;
 
   if (watchedSeconds > 0) {
     video.watchTimeData.push({
@@ -317,17 +413,66 @@ const logView = async (videoId, investorId, watchedSeconds = 0) => {
     });
   }
   await video.save();
-  return { logged: true };
+  return { logged: true, views: video.views };
 };
 
 const getMyPitches = async (founderId) => {
-  return Video.find({ founderId }).sort({ createdAt: -1 });
+  const videos = await Video.find({ founderId }).sort({ createdAt: -1 }).lean();
+  return enrichWithCommentCounts(videos, founderId);
+};
+
+// Public — active pitches for a given founder (for their profile page)
+const getUserPitches = async (founderId, viewerId) => {
+  const videos = await Video.find({
+    founderId,
+    status: "active",
+    visibility: { $ne: "investors-only" },
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+  return enrichWithCommentCounts(videos, viewerId || founderId);
 };
 
 const getSavedPitches = async (investorId) => {
-  return Video.find({ saves: investorId, status: "active" })
+  const videos = await Video.find({ saves: investorId, status: "active" })
     .sort({ createdAt: -1 })
-    .populate("founderId", "name avatar companyName industry isVerified");
+    .populate("founderId", "name avatar companyName industry isVerified")
+    .lean();
+  return enrichWithCommentCounts(videos, investorId);
+};
+
+// Helper — add commentCount + isLiked/isSaved + counts to a list of videos
+const enrichWithCommentCounts = async (videos, userId) => {
+  if (!videos.length) return videos;
+  const Comment = require("../comment/comment.model");
+  const videoIds = videos.map((v) => v._id);
+  const commentCounts = {};
+  try {
+    const counts = await Comment.aggregate([
+      {
+        $match: {
+          videoId: { $in: videoIds },
+          parentId: null,
+          isDeleted: false,
+          isHidden: false,
+        },
+      },
+      { $group: { _id: "$videoId", count: { $sum: 1 } } },
+    ]);
+    counts.forEach((c) => {
+      commentCounts[c._id.toString()] = c.count;
+    });
+  } catch {}
+
+  const uid = userId?.toString();
+  return videos.map((v) => ({
+    ...v,
+    isLiked: uid ? (v.likes || []).some((id) => id.toString() === uid) : false,
+    isSaved: uid ? (v.saves || []).some((id) => id.toString() === uid) : false,
+    likeCount: (v.likes || []).length,
+    saveCount: (v.saves || []).length,
+    commentCount: commentCounts[v._id.toString()] ?? v.commentCount ?? 0,
+  }));
 };
 
 const getAnalytics = async (videoId, founderId) => {
@@ -510,6 +655,7 @@ module.exports = {
   markNotInterested,
   logView,
   getMyPitches,
+  getUserPitches,
   getSavedPitches,
   getAnalytics,
   renewPitch,

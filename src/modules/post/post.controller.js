@@ -50,6 +50,11 @@ const save = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, result, "Save toggled"));
 });
 
+const savedPosts = asyncHandler(async (req, res) => {
+  const posts = await postService.getSavedPosts(req.user._id);
+  res.json(new ApiResponse(200, { posts }, "Saved posts"));
+});
+
 const userPosts = asyncHandler(async (req, res) => {
   const posts = await postService.getUserPosts(req.params.userId, {
     cursor: req.query.cursor,
@@ -67,5 +72,6 @@ module.exports = {
   update,
   like,
   save,
+  savedPosts,
   userPosts,
 };

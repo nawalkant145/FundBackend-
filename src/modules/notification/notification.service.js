@@ -22,9 +22,28 @@ const pushFCM = async (fcmToken, { title, body, data = {} }) => {
   }
 };
 
+// Map a notification type → the user preference key that gates it.
+// Types without an entry are always delivered (e.g. account/security, calls).
+const TYPE_TO_PREF = {
+  like: "likes",
+  save: "saves",
+  investment: "investmentInterest",
+};
+
 // Main entry — fan out to in-app socket, FCM, and DB
 const send = async (userId, payload) => {
   const { type, title, body = "", data = {} } = payload;
+
+  // Respect the recipient's notification preferences (default on)
+  const prefKey = TYPE_TO_PREF[type];
+  if (prefKey) {
+    try {
+      const recipient = await User.findById(userId).select("notificationPrefs");
+      if (recipient?.notificationPrefs?.[prefKey] === false) {
+        return null; // user opted out of this notification type
+      }
+    } catch {}
+  }
 
   const notif = await Notification.create({ userId, type, title, body, data });
 

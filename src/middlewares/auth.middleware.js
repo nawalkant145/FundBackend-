@@ -35,6 +35,14 @@ const authenticate = asyncHandler(async (req, res, next) => {
     throw new ApiError(403, "Your account has been banned");
   }
 
+  if (user.suspendedUntil && user.suspendedUntil > new Date()) {
+    const until = new Date(user.suspendedUntil).toLocaleString();
+    throw new ApiError(
+      403,
+      `Your account is suspended until ${until}${user.suspensionReason ? `: ${user.suspensionReason}` : ""}`,
+    );
+  }
+
   if (!user.isActive) {
     throw new ApiError(403, "Your account is inactive");
   }

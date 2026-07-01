@@ -1,11 +1,19 @@
 const Post = require("./post.model");
 const ApiError = require("../../utils/ApiError");
 const cloudinary = require("../../config/cloudinary");
+const { cleanText } = require("../../utils/profanityFilter");
+const settingsService = require("../settings/settings.service");
 
 const MAX_POSTS_PER_DAY = 10;
 const MAX_IMAGES = 10;
 
 const createPost = async (userId, files, body) => {
+  const settings = await settingsService.getSettings().catch(() => ({}));
+  if (settings.postsEnabled === false) {
+    throw new ApiError(403, "Posting is temporarily disabled by admin");
+  }
+  const dailyLimit = settings.maxPostsPerDay || MAX_POSTS_PER_DAY;
+
   // Check daily limit
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -13,11 +21,8 @@ const createPost = async (userId, files, body) => {
     authorId: userId,
     createdAt: { $gte: today },
   });
-  if (count >= MAX_POSTS_PER_DAY) {
-    throw new ApiError(
-      429,
-      `Daily post limit reached (${MAX_POSTS_PER_DAY}/day)`,
-    );
+  if (count >= dailyLimit) {
+    throw new ApiError(429, `Daily post limit reached (${dailyLimit}/day)`);
   }
 
   const { caption, link, hashtags, type } = body;
@@ -46,7 +51,10 @@ const createPost = async (userId, files, body) => {
     authorId: userId,
     type: type || (imageUrls.length > 0 ? "images" : "text"),
     images: imageUrls,
-    caption: caption || "",
+    caption:
+      settings.profanityFilterEnabled !== false
+        ? cleanText(caption || "", settings.customBannedWords || [])
+        : caption || "",
     link: link || "",
     hashtags: hashtags
       ? (typeof hashtags === "string" ? hashtags.split(",") : hashtags).map(
@@ -54,6 +62,20 @@ const createPost = async (userId, files, body) => {
         )
       : [],
   });
+
+  // Auto-flag caption for admin review if it had profanity
+  try {
+    const moderation = require("../moderation/moderation.service");
+    moderation
+      .flagIfNeeded({
+        contentType: "post",
+        contentId: post._id,
+        authorId: userId,
+        text: caption || "",
+        extraWords: settings.customBannedWords || [],
+      })
+      .catch(() => {});
+  } catch {}
 
   return post.toObject();
 };
@@ -68,8 +90,18 @@ const getFeed = async (userId, { cursor, limit = 20 }) => {
     .populate("authorId", "name username avatar companyName isVerified")
     .lean();
 
+  // Enrich with isLiked/isSaved for the requesting user
+  const uid = userId.toString();
+  const enriched = posts.map((p) => ({
+    ...p,
+    isLiked: (p.likes || []).some((id) => id.toString() === uid),
+    isSaved: (p.saves || []).some((id) => id.toString() === uid),
+    likeCount: (p.likes || []).length,
+    saveCount: (p.saves || []).length,
+  }));
+
   return {
-    posts,
+    posts: enriched,
     nextCursor: posts.length > 0 ? posts[posts.length - 1]._id : null,
     hasMore: posts.length === Number(limit),
   };
@@ -144,6 +176,21 @@ const savePost = async (postId, userId) => {
   return { saved: idx === -1, count: post.saves.length };
 };
 
+const getSavedPosts = async (userId) => {
+  const posts = await Post.find({ saves: userId, isDeleted: false })
+    .sort({ createdAt: -1 })
+    .populate("authorId", "name username avatar companyName isVerified")
+    .lean();
+  const uid = userId.toString();
+  return posts.map((p) => ({
+    ...p,
+    isLiked: (p.likes || []).some((id) => id.toString() === uid),
+    isSaved: true,
+    likeCount: (p.likes || []).length,
+    saveCount: (p.saves || []).length,
+  }));
+};
+
 const getUserPosts = async (userId, { cursor, limit = 20 }) => {
   const query = { authorId: userId, isDeleted: false };
   if (cursor) query._id = { $lt: cursor };
@@ -159,5 +206,6 @@ module.exports = {
   updatePost,
   likePost,
   savePost,
+  getSavedPosts,
   getUserPosts,
 };

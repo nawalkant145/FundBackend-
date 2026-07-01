@@ -2,6 +2,16 @@ const { Chat, Message } = require("./chat.model");
 const Video = require("../video/video.model");
 const User = require("../user/user.model");
 const ApiError = require("../../utils/ApiError");
+const {
+  FREE_CHATS_PER_MONTH,
+} = require("../subscription/subscription.constants");
+
+function nextMonthStart() {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1, 1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
 
 // Investor starts chat with founder. Requires investor to have liked
 // at least one of founder's pitches (mutual interest signal).
@@ -37,6 +47,29 @@ const startChat = async (investorId, founderId) => {
 
   let chat = await Chat.findOne({ founderId, investorId });
   if (!chat) {
+    // ── Free-tier quota enforcement (server-side) ──
+    // Founders chat free; investors get FREE_CHATS_PER_MONTH new chats,
+    // then must be on an active Pro subscription.
+    if (!investor.isProActive()) {
+      // Reset the monthly counter if the window has passed
+      if (
+        !investor.chatQuotaResetAt ||
+        new Date(investor.chatQuotaResetAt) <= new Date()
+      ) {
+        investor.freeChatsUsedThisMonth = 0;
+        investor.chatQuotaResetAt = nextMonthStart();
+      }
+      if ((investor.freeChatsUsedThisMonth || 0) >= FREE_CHATS_PER_MONTH) {
+        throw new ApiError(
+          403,
+          "You've used your free chat for this month. Upgrade to Pro for unlimited conversations.",
+        );
+      }
+      investor.freeChatsUsedThisMonth =
+        (investor.freeChatsUsedThisMonth || 0) + 1;
+      await investor.save({ validateBeforeSave: false });
+    }
+
     chat = await Chat.create({
       participants: [founderId, investorId],
       founderId,

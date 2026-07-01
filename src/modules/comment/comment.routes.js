@@ -7,6 +7,7 @@ router.use(authenticate);
 
 router.post("/", c.create);
 router.get("/video/:videoId", c.list);
+router.get("/post/:postId", c.listByPost);
 router.put("/:id", c.update);
 router.delete("/:id", c.remove);
 router.post("/:id/like", c.like);

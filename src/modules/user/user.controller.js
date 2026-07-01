@@ -90,6 +90,33 @@ const search = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, result, "Search results"));
 });
 
+// ─── Follow system ─────────────────────────────
+const followUser = asyncHandler(async (req, res) => {
+  const result = await userService.followUser(req.user._id, req.params.userId);
+  res.json(new ApiResponse(200, result, "Follow toggled"));
+});
+
+const getFollowers = asyncHandler(async (req, res) => {
+  const userId = req.params.userId || req.user._id;
+  const users = await userService.getFollowers(userId);
+  res.json(new ApiResponse(200, { users }, "Followers"));
+});
+
+const getFollowingList = asyncHandler(async (req, res) => {
+  const userId = req.params.userId || req.user._id;
+  const users = await userService.getFollowingList(userId);
+  res.json(new ApiResponse(200, { users }, "Following"));
+});
+
+const checkFollowing = asyncHandler(async (req, res) => {
+  const User = require("./user.model");
+  const me = await User.findById(req.user._id).select("following");
+  const isFollowing = (me?.following || []).some(
+    (id) => id.toString() === req.params.userId,
+  );
+  res.json(new ApiResponse(200, { isFollowing }, "Follow check"));
+});
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -104,4 +131,8 @@ module.exports = {
   unblockUser,
   deleteAccount,
   search,
+  followUser,
+  getFollowers,
+  getFollowingList,
+  checkFollowing,
 };

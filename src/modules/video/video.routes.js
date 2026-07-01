@@ -35,6 +35,7 @@ router.post("/:id/not-interested", c.notInterested);
 // Both
 router.get("/trending", c.trending);
 router.get("/search", c.search);
+router.get("/user/:userId", c.userPitches);
 router.get("/:id", c.getOne);
 router.post("/:id/view", c.logView);
 

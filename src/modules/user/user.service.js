@@ -23,6 +23,8 @@ const SAFE_FIELDS = [
   "investmentThesis",
   "portfolioCompanies",
   "openToConnect",
+  "notificationPrefs",
+  "privacyPrefs",
 ];
 
 const computeProfileCompleteness = (user) => {
@@ -273,4 +275,71 @@ module.exports = {
   deleteAccount,
   search,
   computeProfileCompleteness,
+  followUser,
+  getFollowers,
+  getFollowingList,
 };
+
+// ─── Follow system ─────────────────────────────────
+async function followUser(currentUserId, targetUserId) {
+  if (currentUserId.toString() === targetUserId.toString()) {
+    throw new ApiError(400, "Cannot follow yourself");
+  }
+  const target = await User.findById(targetUserId);
+  if (!target) throw new ApiError(404, "User not found");
+
+  const alreadyFollowing = (target.followers || []).some(
+    (id) => id.toString() === currentUserId.toString(),
+  );
+
+  if (alreadyFollowing) {
+    // Unfollow
+    await User.findByIdAndUpdate(targetUserId, {
+      $pull: { followers: currentUserId },
+      $inc: { followersCount: -1 },
+    });
+    await User.findByIdAndUpdate(currentUserId, {
+      $pull: { following: targetUserId },
+      $inc: { followingCount: -1 },
+    });
+    return { following: false };
+  } else {
+    // Follow
+    await User.findByIdAndUpdate(targetUserId, {
+      $addToSet: { followers: currentUserId },
+      $inc: { followersCount: 1 },
+    });
+    await User.findByIdAndUpdate(currentUserId, {
+      $addToSet: { following: targetUserId },
+      $inc: { followingCount: 1 },
+    });
+    // Notify the target user
+    try {
+      const notifService = require("../notification/notification.service");
+      const follower = await User.findById(currentUserId).select("name");
+      notifService
+        .send(targetUserId, {
+          type: "follow",
+          title: `${follower?.name || "Someone"} started following you`,
+          body: "",
+          data: { followerId: currentUserId.toString() },
+        })
+        .catch(() => {});
+    } catch {}
+    return { following: true };
+  }
+}
+
+async function getFollowers(userId) {
+  const user = await User.findById(userId)
+    .select("followers")
+    .populate("followers", "name username avatar isVerified role companyName");
+  return user?.followers || [];
+}
+
+async function getFollowingList(userId) {
+  const user = await User.findById(userId)
+    .select("following")
+    .populate("following", "name username avatar isVerified role companyName");
+  return user?.following || [];
+}

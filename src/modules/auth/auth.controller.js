@@ -10,7 +10,7 @@ const cookieOptions = {
   sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
 };
 const accessCookieMaxAge = 15 * 60 * 1000;
-const refreshCookieMaxAge = 7 * 24 * 60 * 60 * 1000;
+const refreshCookieMaxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 const setAuthCookies = (res, accessToken, refreshToken) => {
   res.cookie("accessToken", accessToken, {
@@ -117,6 +117,18 @@ const login = asyncHandler(async (req, res) => {
   validateLogin(req.body);
   const { identifier, email, password } = req.body;
   const result = await authService.loginUser({ identifier, email, password });
+
+  // Track login IP + device
+  try {
+    const User = require("../user/user.model");
+    await User.findByIdAndUpdate(result.user._id, {
+      lastLoginIp: req.ip || req.headers["x-forwarded-for"] || "",
+      lastLoginUserAgent: req.headers["user-agent"] || "",
+      lastLoginAt: new Date(),
+      lastSeen: new Date(),
+    });
+  } catch {}
+
   setAuthCookies(res, result.accessToken, result.refreshToken);
   res.status(200).json(new ApiResponse(200, result, "Login successful"));
 });

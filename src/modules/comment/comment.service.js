@@ -1,43 +1,99 @@
 const Comment = require("./comment.model");
 const Video = require("../video/video.model");
+const Post = require("../post/post.model");
 const ApiError = require("../../utils/ApiError");
+const { getClient } = require("../../config/redis");
+const { cleanText } = require("../../utils/profanityFilter");
+const settingsService = require("../settings/settings.service");
 
-const create = async (userId, { videoId, text, parentId }) => {
+// Invalidate all feed caches so updated comment counts show on refresh
+const invalidateFeedCache = async () => {
+  try {
+    const redis = getClient();
+    const keys = await redis.keys("feed:*");
+    if (keys.length) await redis.del(...keys);
+  } catch {}
+};
+
+const create = async (userId, { videoId, postId, text, parentId }) => {
   if (!text || !text.trim()) throw new ApiError(400, "Comment text required");
-  const video = await Video.findById(videoId);
-  if (!video) throw new ApiError(404, "Video not found");
-  if (video.status !== "active") {
-    throw new ApiError(400, "Cannot comment on inactive pitch");
+  if (!videoId && !postId) {
+    throw new ApiError(400, "videoId or postId required");
+  }
+
+  // Resolve the target (video OR post)
+  if (videoId) {
+    const video = await Video.findById(videoId);
+    if (!video) throw new ApiError(404, "Video not found");
+    if (video.status !== "active") {
+      throw new ApiError(400, "Cannot comment on inactive pitch");
+    }
+  } else {
+    const post = await Post.findById(postId);
+    if (!post || post.isDeleted) throw new ApiError(404, "Post not found");
   }
 
   if (parentId) {
     const parent = await Comment.findById(parentId);
-    if (!parent || parent.videoId.toString() !== videoId.toString()) {
+    const sameTarget = videoId
+      ? parent?.videoId?.toString() === videoId.toString()
+      : parent?.postId?.toString() === postId.toString();
+    if (!parent || !sameTarget) {
       throw new ApiError(404, "Parent comment not found");
     }
   }
 
+  const settings = await settingsService.getSettings().catch(() => ({}));
+  const extraWords = settings.customBannedWords || [];
+  const filterOn = settings.profanityFilterEnabled !== false;
+
   const comment = await Comment.create({
-    videoId,
+    videoId: videoId || null,
+    postId: postId || null,
     userId,
     parentId: parentId || null,
-    text: text.trim(),
+    text: filterOn ? cleanText(text.trim(), extraWords) : text.trim(),
   });
 
   if (parentId) {
     await Comment.findByIdAndUpdate(parentId, { $inc: { replyCount: 1 } });
+  } else if (videoId) {
+    // Only top-level comments count toward the comment count
+    await Video.findByIdAndUpdate(videoId, { $inc: { commentCount: 1 } });
+    await invalidateFeedCache();
+  } else {
+    await Post.findByIdAndUpdate(postId, { $inc: { commentCount: 1 } });
+    await invalidateFeedCache();
   }
-  return comment.populate("userId", "name avatar role isVerified");
+
+  // Auto-flag for admin review if the original text had profanity
+  try {
+    const moderation = require("../moderation/moderation.service");
+    moderation
+      .flagIfNeeded({
+        contentType: "comment",
+        contentId: comment._id,
+        authorId: userId,
+        text,
+        extraWords,
+      })
+      .catch(() => {});
+  } catch {}
+
+  return comment.populate("userId", "name username avatar role isVerified");
 };
 
-const list = async (videoId, { cursor, limit = 20, parentId = null } = {}) => {
+const list = async (target, { cursor, limit = 20, parentId = null } = {}) => {
   limit = Math.min(Number(limit) || 20, 50);
-  const q = { videoId, parentId, isDeleted: false, isHidden: false };
+  // target = { videoId } or { postId }
+  const q = { parentId, isDeleted: false, isHidden: false };
+  if (target.videoId) q.videoId = target.videoId;
+  if (target.postId) q.postId = target.postId;
   if (cursor) q._id = { $lt: cursor };
   const items = await Comment.find(q)
     .sort({ _id: -1 })
     .limit(limit + 1)
-    .populate("userId", "name avatar role isVerified")
+    .populate("userId", "name username avatar role isVerified")
     .lean();
   const hasMore = items.length > limit;
   return {
@@ -51,7 +107,7 @@ const update = async (commentId, userId, text) => {
   if (!text || !text.trim()) throw new ApiError(400, "Text required");
   const comment = await Comment.findOne({ _id: commentId, userId });
   if (!comment) throw new ApiError(404, "Comment not found");
-  comment.text = text.trim();
+  comment.text = cleanText(text.trim());
   comment.isEdited = true;
   await comment.save();
   return comment;
@@ -67,6 +123,16 @@ const remove = async (commentId, userId) => {
     await Comment.findByIdAndUpdate(comment.parentId, {
       $inc: { replyCount: -1 },
     });
+  } else if (comment.videoId) {
+    await Video.findByIdAndUpdate(comment.videoId, {
+      $inc: { commentCount: -1 },
+    });
+    await invalidateFeedCache();
+  } else if (comment.postId) {
+    await Post.findByIdAndUpdate(comment.postId, {
+      $inc: { commentCount: -1 },
+    });
+    await invalidateFeedCache();
   }
   return { deleted: true };
 };

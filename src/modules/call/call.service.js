@@ -37,6 +37,14 @@ const initiateCall = async (callerId, { receiverId, type }) => {
   if (caller.verificationLevel < 2 || receiver.verificationLevel < 2) {
     throw new ApiError(403, "Both users must be phone-verified to call");
   }
+  // Investors must be on an active Pro subscription to start calls.
+  // Founders can call freely.
+  if (caller.role === "investor" && !caller.isProActive()) {
+    throw new ApiError(
+      403,
+      "Calls are a Pro feature. Upgrade to start audio/video calls.",
+    );
+  }
 
   // Must have an active chat
   const chat = await Chat.findOne({

@@ -21,6 +21,9 @@ router.get("/feed", c.feed);
 // My posts (founder)
 router.get("/my-posts", authorize("founder"), c.myPosts);
 
+// Saved posts (all authenticated users)
+router.get("/saved", c.savedPosts);
+
 // User's posts (public profile)
 router.get("/user/:userId", c.userPosts);
 

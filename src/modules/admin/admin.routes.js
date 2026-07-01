@@ -16,6 +16,9 @@ router.get("/users/:id", c.getUserDetails);
 router.put("/users/:id", c.editUser);
 router.put("/users/:id/ban", c.banUser);
 router.put("/users/:id/unban", c.unbanUser);
+router.put("/users/:id/suspend", c.suspendUser);
+router.put("/users/:id/unsuspend", c.unsuspendUser);
+router.post("/users/:id/impersonate", c.impersonateUser);
 router.put("/users/:id/reset-password", c.resetUserPassword);
 router.put("/users/:id/promote", c.promoteToAdmin);
 router.put("/users/:id/demote", c.demoteAdmin);
@@ -29,6 +32,11 @@ router.put("/videos/:id/reject", c.rejectVideo);
 router.post("/videos/:id/boost", c.boostVideo);
 router.delete("/videos/:id/boost", c.removeBoost);
 router.delete("/videos/:id", c.forceDeleteVideo);
+
+// Trash (soft-deleted content)
+router.get("/trash", c.listTrash);
+router.put("/videos/:id/restore", c.restoreVideo);
+router.delete("/videos/:id/purge", c.purgeVideo);
 
 // KYC
 router.get("/documents/pending", c.pendingDocuments);
@@ -47,7 +55,11 @@ router.delete("/comments/:id", c.deleteComment);
 
 // Investments
 router.get("/investments", c.listInvestments);
+router.get("/investments/export", c.exportInvestments);
+router.get("/investments/suspicious", c.suspiciousActivity);
 router.post("/investments/:id/refund", c.refundInvestment);
+router.put("/investments/:id/freeze", c.freezeInvestment);
+router.put("/investments/:id/unfreeze", c.unfreezeInvestment);
 
 // Calls / Chats
 router.get("/calls", c.listCalls);
@@ -59,5 +71,15 @@ router.post("/broadcast", c.broadcast);
 
 // Audit log
 router.get("/audit", c.auditLogs);
+router.get("/audit/actions", c.auditActionTypes);
+router.get("/audit/export", c.auditExport);
+
+// Moderation queue (auto-flagged content)
+router.get("/moderation", c.listFlags);
+router.put("/moderation/:id/resolve", c.resolveFlag);
+
+// Platform settings (feature flags, limits, banned words)
+router.get("/settings", c.getSettings);
+router.put("/settings", c.updateSettings);
 
 module.exports = router;

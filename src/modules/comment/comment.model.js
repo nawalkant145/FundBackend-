@@ -5,7 +5,13 @@ const commentSchema = new mongoose.Schema(
     videoId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Video",
-      required: true,
+      default: null,
+      index: true,
+    },
+    postId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Post",
+      default: null,
       index: true,
     },
     userId: {
@@ -32,5 +38,6 @@ const commentSchema = new mongoose.Schema(
 );
 
 commentSchema.index({ videoId: 1, parentId: 1, createdAt: -1 });
+commentSchema.index({ postId: 1, parentId: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Comment", commentSchema);

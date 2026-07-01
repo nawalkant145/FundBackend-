@@ -9,6 +9,11 @@ router.use("/comment", require("../modules/comment/comment.routes"));
 router.use("/chat", require("../modules/chat/chat.routes"));
 router.use("/call", require("../modules/call/call.routes"));
 router.use("/investment", require("../modules/investment/investment.routes"));
+router.use("/boost", require("../modules/boost/boost.routes"));
+router.use(
+  "/subscription",
+  require("../modules/subscription/subscription.routes"),
+);
 router.use(
   "/pitch-deck-access",
   require("../modules/pitchDeckAccess/pitchDeckAccess.routes"),

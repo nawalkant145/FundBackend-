@@ -109,6 +109,38 @@ const userSchema = new mongoose.Schema(
     // Block list
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 
+    // Follow system
+    followers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    following: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    followersCount: { type: Number, default: 0 },
+    followingCount: { type: Number, default: 0 },
+
+    // Notification preferences (per-channel toggles; default all on)
+    notificationPrefs: {
+      type: Object,
+      default: {},
+    },
+    // Privacy preferences (UI toggles)
+    privacyPrefs: {
+      type: Object,
+      default: {},
+    },
+
+    // Subscription (EXPGLO Pro)
+    subscription: {
+      plan: { type: String, enum: ["free", "pro"], default: "free" },
+      status: {
+        type: String,
+        enum: ["inactive", "active", "expired", "cancelled"],
+        default: "inactive",
+      },
+      startedAt: { type: Date },
+      expiresAt: { type: Date },
+    },
+    // Free-tier monthly chat quota (investors)
+    freeChatsUsedThisMonth: { type: Number, default: 0 },
+    chatQuotaResetAt: { type: Date },
+
     // Auth
     refreshToken: { type: String, select: false },
     fcmToken: { type: String, default: "" },
@@ -121,6 +153,15 @@ const userSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
     isBanned: { type: Boolean, default: false },
     banReason: { type: String, default: "" },
+
+    // IP / device tracking (last login)
+    lastLoginIp: { type: String, default: "" },
+    lastLoginUserAgent: { type: String, default: "" },
+    lastLoginAt: { type: Date },
+
+    // Temporary suspension (auto-expires)
+    suspendedUntil: { type: Date, default: null },
+    suspensionReason: { type: String, default: "" },
   },
   { timestamps: true },
 );
@@ -165,6 +206,22 @@ userSchema.methods.recomputeVerificationLevel = function () {
   this.verificationLevel = lvl;
   this.isVerified = lvl === 3;
   if (lvl === 3 && !this.verifiedAt) this.verifiedAt = new Date();
+};
+
+// Helper — is the account currently suspended (and not yet expired)?
+userSchema.methods.isSuspended = function () {
+  return !!(this.suspendedUntil && this.suspendedUntil > new Date());
+};
+
+// Helper — does the user have an active Pro subscription right now?
+userSchema.methods.isProActive = function () {
+  return !!(
+    this.subscription &&
+    this.subscription.plan === "pro" &&
+    this.subscription.status === "active" &&
+    this.subscription.expiresAt &&
+    this.subscription.expiresAt > new Date()
+  );
 };
 
 module.exports = mongoose.model("User", userSchema);

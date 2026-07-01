@@ -127,6 +127,9 @@ const createPaymentOrder = async (investmentId, userId) => {
   if (inv.investorId.toString() !== userId.toString()) {
     throw new ApiError(403, "Only investor can pay");
   }
+  if (inv.isFrozen) {
+    throw new ApiError(403, "This deal is frozen by admin and cannot proceed");
+  }
   if (inv.stage !== "agreed") {
     throw new ApiError(400, "Both parties must agree before payment");
   }

@@ -86,6 +86,14 @@ const myPitches = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, { videos }, "My pitches"));
 });
 
+const userPitches = asyncHandler(async (req, res) => {
+  const videos = await videoService.getUserPitches(
+    req.params.userId,
+    req.user._id,
+  );
+  res.json(new ApiResponse(200, { videos }, "User pitches"));
+});
+
 const savedPitches = asyncHandler(async (req, res) => {
   const videos = await videoService.getSavedPitches(req.user._id);
   res.json(new ApiResponse(200, { videos }, "Saved pitches"));
@@ -119,6 +127,7 @@ module.exports = {
   notInterested,
   logView,
   myPitches,
+  userPitches,
   savedPitches,
   analytics,
   renew,

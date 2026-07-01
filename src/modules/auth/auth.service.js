@@ -49,6 +49,17 @@ const registerUser = async ({
   email = email.toLowerCase().trim();
   username = (username || "").toLowerCase().trim();
 
+  // Respect the global "signups enabled" feature flag
+  try {
+    const settingsService = require("../settings/settings.service");
+    const settings = await settingsService.getSettings();
+    if (settings.signupsEnabled === false) {
+      throw new ApiError(403, "New signups are temporarily disabled.");
+    }
+  } catch (e) {
+    if (e.statusCode === 403) throw e;
+  }
+
   // Field-specific duplicate checks → clear messages for the UI
   if (await User.findOne({ email })) {
     throw new ApiError(409, "Email already registered", {
@@ -135,6 +146,13 @@ const loginUser = async ({ identifier, email, password }) => {
   const user = await User.findOne(query).select("+password +refreshToken");
   if (!user) throw new ApiError(401, "Invalid credentials");
   if (user.isBanned) throw new ApiError(403, "Your account has been banned");
+  if (user.suspendedUntil && user.suspendedUntil > new Date()) {
+    const until = new Date(user.suspendedUntil).toLocaleString();
+    throw new ApiError(
+      403,
+      `Your account is suspended until ${until}${user.suspensionReason ? `: ${user.suspensionReason}` : ""}`,
+    );
+  }
   if (!user.isActive) throw new ApiError(403, "Your account is inactive");
 
   if (user.lockUntil && user.lockUntil > Date.now()) {

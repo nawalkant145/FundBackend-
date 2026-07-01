@@ -34,6 +34,11 @@ const investmentSchema = new mongoose.Schema(
       index: true,
     },
     paidAt: { type: Date },
+
+    // Admin oversight — freeze a suspicious deal mid-flow
+    isFrozen: { type: Boolean, default: false },
+    frozenReason: { type: String, default: "" },
+    flaggedSuspicious: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

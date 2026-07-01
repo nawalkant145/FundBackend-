@@ -248,6 +248,84 @@ const unbanUser = async (userId, adminId) => {
   return user;
 };
 
+// Temporary suspension — auto-expires after `days`
+const suspendUser = async (userId, days, reason, adminId) => {
+  if (userId.toString() === adminId.toString()) {
+    throw new ApiError(400, "Cannot suspend yourself");
+  }
+  const numDays = Math.max(1, Math.min(Number(days) || 7, 365));
+  const until = new Date(Date.now() + numDays * 24 * 60 * 60 * 1000);
+  const user = await User.findByIdAndUpdate(
+    userId,
+    {
+      suspendedUntil: until,
+      suspensionReason: reason || "Policy violation",
+      refreshToken: undefined,
+    },
+    { new: true },
+  );
+  if (!user) throw new ApiError(404, "User not found");
+  await notif
+    .send(userId, {
+      type: "system",
+      title: "Account suspended",
+      body: `Your account is suspended for ${numDays} day(s)${reason ? `: ${reason}` : ""}`,
+    })
+    .catch(() => {});
+  await audit.log({
+    actorId: adminId,
+    action: "SUSPEND_USER",
+    targetType: "User",
+    targetId: userId,
+    metadata: { days: numDays, reason, until },
+  });
+  return user;
+};
+
+const unsuspendUser = async (userId, adminId) => {
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { suspendedUntil: null, suspensionReason: "" },
+    { new: true },
+  );
+  if (!user) throw new ApiError(404, "User not found");
+  await audit.log({
+    actorId: adminId,
+    action: "UNSUSPEND_USER",
+    targetType: "User",
+    targetId: userId,
+  });
+  return user;
+};
+
+// Impersonate — issue a short-lived access token to "view as" a user
+const impersonateUser = async (userId, adminId) => {
+  if (userId.toString() === adminId.toString()) {
+    throw new ApiError(400, "Cannot impersonate yourself");
+  }
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "User not found");
+  if (user.role === "admin") {
+    throw new ApiError(403, "Cannot impersonate another admin");
+  }
+  const { generateAccessToken } = require("../../utils/generateToken");
+  // Short-lived token, tagged with who is impersonating (for traceability)
+  const token = generateAccessToken({
+    _id: user._id.toString(),
+    role: user.role,
+    imp: true,
+    by: adminId.toString(),
+  });
+  await audit.log({
+    actorId: adminId,
+    action: "IMPERSONATE_USER",
+    targetType: "User",
+    targetId: userId,
+    metadata: { name: user.name, email: user.email },
+  });
+  return { token, user: user.toSafeJSON() };
+};
+
 const editUser = async (userId, updates, adminId) => {
   // Admin can edit limited fields directly
   const allowed = [
@@ -474,13 +552,14 @@ const removeBoost = async (videoId, adminId) => {
 const forceDeleteVideo = async (videoId, adminId, reason) => {
   const video = await Video.findById(videoId);
   if (!video) throw new ApiError(404, "Video not found");
-  if (video.cloudinaryPublicId) {
-    await deleteFromCloudinary(video.cloudinaryPublicId, "video").catch(
-      () => {},
-    );
-  }
-  await Comment.deleteMany({ videoId });
-  await video.deleteOne();
+
+  // Soft-delete — keep in DB for 30 days in case of accidental removal
+  video.status = "deleted";
+  video.deletedAt = new Date();
+  video.rejectionReason = reason || "Removed by admin";
+  await video.save();
+
+  await Comment.updateMany({ videoId }, { isHidden: true });
   await notif.send(video.founderId, {
     type: "system",
     title: "Pitch removed",
@@ -495,6 +574,65 @@ const forceDeleteVideo = async (videoId, adminId, reason) => {
     metadata: { reason, founderId: video.founderId.toString() },
   });
   return { ok: true };
+};
+
+// Permanently purge a soft-deleted video (admin only, after review)
+const purgeVideo = async (videoId, adminId) => {
+  const video = await Video.findById(videoId);
+  if (!video) throw new ApiError(404, "Video not found");
+  if (video.cloudinaryPublicId) {
+    await deleteFromCloudinary(video.cloudinaryPublicId, "video").catch(
+      () => {},
+    );
+  }
+  await Comment.deleteMany({ videoId });
+  await video.deleteOne();
+  await audit.log({
+    actorId: adminId,
+    action: "PURGE_VIDEO",
+    targetType: "Video",
+    targetId: videoId,
+  });
+  return { ok: true };
+};
+
+// Restore a soft-deleted video
+const restoreVideo = async (videoId, adminId) => {
+  const video = await Video.findById(videoId);
+  if (!video) throw new ApiError(404, "Video not found");
+  if (video.status !== "deleted") {
+    throw new ApiError(400, "Video is not in the trash");
+  }
+  video.status = "active";
+  video.deletedAt = null;
+  video.rejectionReason = "";
+  await video.save();
+  await Comment.updateMany({ videoId }, { isHidden: false });
+  await audit.log({
+    actorId: adminId,
+    action: "RESTORE_VIDEO",
+    targetType: "Video",
+    targetId: videoId,
+  });
+  return video;
+};
+
+// List trash (soft-deleted videos within last 30 days)
+const listTrash = async ({ limit = 50, cursor } = {}) => {
+  limit = Math.min(Number(limit) || 50, 100);
+  const q = { status: "deleted" };
+  if (cursor) q._id = { $lt: cursor };
+  const items = await Video.find(q)
+    .sort({ deletedAt: -1 })
+    .limit(limit + 1)
+    .populate("founderId", "name email companyName")
+    .lean();
+  const hasMore = items.length > limit;
+  return {
+    videos: hasMore ? items.slice(0, limit) : items,
+    nextCursor: hasMore ? items[limit - 1]._id : null,
+    hasMore,
+  };
 };
 
 // ─── KYC ────────────────────────────────────────
@@ -725,6 +863,120 @@ const refundInvestment = async (investmentId, adminId, reason) => {
   return inv;
 };
 
+// Freeze / unfreeze a deal mid-flow (suspected fraud)
+const freezeInvestment = async (investmentId, adminId, reason) => {
+  const inv = await Investment.findByIdAndUpdate(
+    investmentId,
+    { isFrozen: true, frozenReason: reason || "Under review" },
+    { new: true },
+  );
+  if (!inv) throw new ApiError(404, "Investment not found");
+  await notif
+    .send(inv.investorId, {
+      type: "system",
+      title: "Deal frozen",
+      body: reason || "This deal is under admin review",
+      data: { investmentId: inv._id.toString() },
+    })
+    .catch(() => {});
+  await audit.log({
+    actorId: adminId,
+    action: "FREEZE_INVESTMENT",
+    targetType: "Investment",
+    targetId: investmentId,
+    metadata: { reason },
+  });
+  return inv;
+};
+
+const unfreezeInvestment = async (investmentId, adminId) => {
+  const inv = await Investment.findByIdAndUpdate(
+    investmentId,
+    { isFrozen: false, frozenReason: "" },
+    { new: true },
+  );
+  if (!inv) throw new ApiError(404, "Investment not found");
+  await audit.log({
+    actorId: adminId,
+    action: "UNFREEZE_INVESTMENT",
+    targetType: "Investment",
+    targetId: investmentId,
+  });
+  return inv;
+};
+
+// Export all investments as CSV (for accounting / compliance)
+const exportInvestmentsCsv = async () => {
+  const items = await Investment.find({})
+    .sort({ createdAt: -1 })
+    .populate("founderId", "name email companyName")
+    .populate("investorId", "name email")
+    .populate("videoId", "title")
+    .lean();
+
+  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const header = [
+    "ID",
+    "Date",
+    "Investor",
+    "Investor Email",
+    "Founder",
+    "Company",
+    "Pitch",
+    "Amount",
+    "Equity",
+    "Stage",
+    "Status",
+    "Frozen",
+  ].join(",");
+  const rows = items.map((i) =>
+    [
+      esc(i._id),
+      esc(new Date(i.createdAt).toISOString()),
+      esc(i.investorId?.name),
+      esc(i.investorId?.email),
+      esc(i.founderId?.name),
+      esc(i.founderId?.companyName),
+      esc(i.videoId?.title),
+      esc(i.amount),
+      esc(i.equity),
+      esc(i.stage),
+      esc(i.status),
+      esc(i.isFrozen ? "yes" : "no"),
+    ].join(","),
+  );
+  return [header, ...rows].join("\n");
+};
+
+// Detect suspicious investor activity (many deals in a short window)
+const detectSuspicious = async () => {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const grouped = await Investment.aggregate([
+    { $match: { createdAt: { $gte: since } } },
+    {
+      $group: {
+        _id: "$investorId",
+        count: { $sum: 1 },
+        totalAmount: { $sum: "$amount" },
+      },
+    },
+    { $match: { count: { $gte: 5 } } }, // 5+ deals in 24h is unusual
+    { $sort: { count: -1 } },
+  ]);
+  // Attach investor info
+  const ids = grouped.map((g) => g._id);
+  const users = await User.find({ _id: { $in: ids } })
+    .select("name email")
+    .lean();
+  const userMap = {};
+  users.forEach((u) => (userMap[u._id.toString()] = u));
+  return grouped.map((g) => ({
+    investor: userMap[g._id.toString()] || { name: "Unknown" },
+    count: g.count,
+    totalAmount: g.totalAmount,
+  }));
+};
+
 // ─── Calls / Chats overview ─────────────────────
 const listCalls = async ({ status, limit = 30, cursor }) => {
   limit = Math.min(Number(limit) || 30, 100);
@@ -832,6 +1084,9 @@ module.exports = {
   getUserDetails,
   banUser,
   unbanUser,
+  suspendUser,
+  unsuspendUser,
+  impersonateUser,
   editUser,
   resetUserPassword,
   promoteToAdmin,
@@ -844,6 +1099,9 @@ module.exports = {
   boostVideo,
   removeBoost,
   forceDeleteVideo,
+  purgeVideo,
+  restoreVideo,
+  listTrash,
   pendingDocuments,
   approveDocuments,
   rejectDocuments,
@@ -855,6 +1113,10 @@ module.exports = {
   deleteComment,
   listInvestments,
   refundInvestment,
+  freezeInvestment,
+  unfreezeInvestment,
+  exportInvestmentsCsv,
+  detectSuspicious,
   listCalls,
   listChats,
   getChatMessages,
