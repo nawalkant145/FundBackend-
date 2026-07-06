@@ -183,7 +183,15 @@ const getFeed = async (investorId, { cursor, limit = FEED_PAGE_SIZE } = {}) => {
 
   const baseQuery = await buildFeedQuery(investorId);
   if (cursor) {
-    baseQuery._id = { ...(baseQuery._id || {}), $lt: cursor };
+    // BUG-04 FIX: The original code did:
+    //   baseQuery._id = { ...(baseQuery._id || {}), $lt: cursor }
+    // which flat-merges $nin and $lt into the same object.
+    // Although MongoDB supports { $nin:[...], $lt: x } on one field,
+    // this pattern silently overwrites any _id condition added later.
+    // Using $and explicitly composes the cursor bound alongside the existing
+    // $nin:seen filter without touching baseQuery._id, making the query
+    // safe to extend in the future.
+    baseQuery.$and = [...(baseQuery.$and || []), { _id: { $lt: cursor } }];
   }
 
   const videos = await Video.find(baseQuery)
@@ -402,8 +410,27 @@ const logView = async (videoId, investorId, watchedSeconds = 0) => {
   );
   if (isUnique) video.uniqueViews.push(investorId);
 
-  // Increment total view count in the DB so it shows in feeds/analytics.
-  video.views = (video.views || 0) + 1;
+  // BUG-03 FIX: Buffer the total view increment in Redis so the cron job
+  // `flushViewCounts` (cron/index.js) has actual data to flush to MongoDB.
+  // Previously video.views was written directly here, making the cron a dead
+  // no-op (it scanned for keys that were never written). Now we use INCR so
+  // the cron accumulates counts and does a single $inc per video every 5 min,
+  // reducing write load significantly under high traffic.
+  // Fallback: if Redis is unavailable, write directly to MongoDB so dev
+  // environments (which may use the in-memory mock) still function correctly.
+  let redisBuffered = false;
+  try {
+    const redis = getClient();
+    await redis.incr(`video:views:${videoId}`);
+    redisBuffered = true;
+  } catch {
+    // Redis unavailable — fall through to direct write below
+  }
+
+  if (!redisBuffered) {
+    // Direct fallback when Redis is down
+    video.views = (video.views || 0) + 1;
+  }
 
   if (watchedSeconds > 0) {
     video.watchTimeData.push({

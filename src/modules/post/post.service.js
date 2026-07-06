@@ -153,7 +153,11 @@ const updatePost = async (postId, userId, body) => {
 const likePost = async (postId, userId) => {
   const post = await Post.findById(postId);
   if (!post) throw new ApiError(404, "Post not found");
-  const idx = post.likes.indexOf(userId);
+  // BUG-01 FIX: .indexOf() uses reference equality and always returns -1 for
+  // ObjectId objects. Use .findIndex() with .toString() comparison instead.
+  const idx = post.likes.findIndex(
+    (id) => id.toString() === userId.toString(),
+  );
   if (idx === -1) {
     post.likes.push(userId);
   } else {
@@ -166,7 +170,10 @@ const likePost = async (postId, userId) => {
 const savePost = async (postId, userId) => {
   const post = await Post.findById(postId);
   if (!post) throw new ApiError(404, "Post not found");
-  const idx = post.saves.indexOf(userId);
+  // BUG-01 FIX: same as likePost — .indexOf() always returns -1 for ObjectIds.
+  const idx = post.saves.findIndex(
+    (id) => id.toString() === userId.toString(),
+  );
   if (idx === -1) {
     post.saves.push(userId);
   } else {

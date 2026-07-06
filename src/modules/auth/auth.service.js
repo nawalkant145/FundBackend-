@@ -45,6 +45,10 @@ const registerUser = async ({
   preferredIndustries,
   preferredStages,
   investmentThesis,
+  // BUG-02 FIX: Accept explicit emailVerified flag from the controller.
+  // The service must NOT hardcode isEmailVerified:true — only the controller
+  // can assert this after confirming the Redis OTP key was present.
+  emailVerified = false,
 }) => {
   email = email.toLowerCase().trim();
   username = (username || "").toLowerCase().trim();
@@ -86,8 +90,10 @@ const registerUser = async ({
     email,
     password,
     role,
-    isEmailVerified: true,
-    verificationLevel: 1,
+    // BUG-02 FIX: Use the emailVerified param, not a hardcoded true.
+    // This ensures only callers who completed the OTP flow can set level 1.
+    isEmailVerified: emailVerified,
+    verificationLevel: emailVerified ? 1 : 0,
   };
   if (phone) userData.phone = phone;
   if (country) userData.country = country;

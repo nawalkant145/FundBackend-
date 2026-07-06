@@ -33,7 +33,7 @@ const register = asyncHandler(async (req, res) => {
   const {
     name,
     username,
-    email,
+    email: rawEmail,
     password,
     role,
     phone,
@@ -49,6 +49,11 @@ const register = asyncHandler(async (req, res) => {
     preferredStages,
     investmentThesis,
   } = req.body;
+
+  // BUG-02 FIX: Normalize email to lowercase BEFORE the Redis lookup.
+  // Without this, an attacker could send 'Test@Example.COM' for OTP but
+  // 'test@example.com' for registration and bypass the duplicate-email check.
+  const email = (rawEmail || "").toLowerCase().trim();
 
   // Check that email was pre-verified via OTP
   const { getClient } = require("../../config/redis");
@@ -79,6 +84,9 @@ const register = asyncHandler(async (req, res) => {
     preferredIndustries,
     preferredStages,
     investmentThesis,
+    // BUG-02 FIX: Pass the verified flag explicitly — the service no longer
+    // hardcodes isEmailVerified:true; only this OTP-confirmed path sets it.
+    emailVerified: true,
   });
 
   // Clean up the verification flag
