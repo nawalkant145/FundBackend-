@@ -36,13 +36,21 @@ const startChat = async (investorId, founderId) => {
     throw new ApiError(403, "You cannot message this user");
   }
 
-  // Check mutual interest — investor must have liked founder's pitch
+  // Check mutual interest — investor must have liked founder's pitch or follow the founder
   const hasLiked = await Video.exists({
     founderId,
     likes: investorId,
   });
-  if (!hasLiked) {
-    throw new ApiError(403, "Like one of the founder's pitches first");
+  const followingArray = investor.following || [];
+  const isFollowing = followingArray.some(
+    (id) => id.toString() === founderId.toString(),
+  );
+
+  if (!hasLiked && !isFollowing) {
+    throw new ApiError(
+      403,
+      "Like one of the founder's pitches or follow them first to start a chat",
+    );
   }
 
   let chat = await Chat.findOne({ founderId, investorId });
