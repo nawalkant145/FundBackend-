@@ -2,7 +2,18 @@ const asyncHandler = require("../../utils/asyncHandler");
 const ApiResponse = require("../../utils/ApiResponse");
 const ApiError = require("../../utils/ApiError");
 const authService = require("./auth.service");
-const { validateRegister, validateLogin } = require("./auth.validation");
+const {
+  validateRegister,
+  validateLogin,
+  validateSendPreRegisterOtp,
+  validateVerifyPreRegisterOtp,
+  validateVerifyEmailOtp,
+  validateSendPhoneOtp,
+  validateVerifyPhoneOtp,
+  validateForgotPassword,
+  validateResetPassword,
+  validateChangePassword,
+} = require("./auth.validation");
 
 const cookieOptions = {
   httpOnly: true,
@@ -109,6 +120,7 @@ const checkAvailability = asyncHandler(async (req, res) => {
 
 // Pre-register: send OTP to verify email before account creation
 const sendPreRegisterOtp = asyncHandler(async (req, res) => {
+  validateSendPreRegisterOtp(req.body);
   const { email } = req.body;
   const result = await authService.sendPreRegisterOtp(email);
   res.status(200).json(new ApiResponse(200, result, "OTP sent to email"));
@@ -116,6 +128,7 @@ const sendPreRegisterOtp = asyncHandler(async (req, res) => {
 
 // Verify pre-register OTP
 const verifyPreRegisterOtp = asyncHandler(async (req, res) => {
+  validateVerifyPreRegisterOtp(req.body);
   const { email, otp } = req.body;
   const result = await authService.verifyPreRegisterOtp(email, otp);
   res.status(200).json(new ApiResponse(200, result, "Email verified"));
@@ -167,29 +180,29 @@ const sendEmailOtp = asyncHandler(async (req, res) => {
 });
 
 const verifyEmailOtp = asyncHandler(async (req, res) => {
+  validateVerifyEmailOtp(req.body);
   const { otp } = req.body;
-  if (!otp) throw new ApiError(400, "OTP required");
   const user = await authService.verifyEmailOtp(req.user._id, otp);
   res.status(200).json(new ApiResponse(200, { user }, "Email verified"));
 });
 
 const sendPhoneOtp = asyncHandler(async (req, res) => {
+  validateSendPhoneOtp(req.body);
   const { phone } = req.body;
-  if (!phone) throw new ApiError(400, "Phone required");
   const result = await authService.sendPhoneOtp(req.user._id, phone);
   res.status(200).json(new ApiResponse(200, result, "Phone OTP sent"));
 });
 
 const verifyPhoneOtp = asyncHandler(async (req, res) => {
+  validateVerifyPhoneOtp(req.body);
   const { otp } = req.body;
-  if (!otp) throw new ApiError(400, "OTP required");
   const user = await authService.verifyPhoneOtp(req.user._id, otp);
   res.status(200).json(new ApiResponse(200, { user }, "Phone verified"));
 });
 
 const forgotPassword = asyncHandler(async (req, res) => {
+  validateForgotPassword(req.body);
   const { email } = req.body;
-  if (!email) throw new ApiError(400, "Email required");
   await authService.forgotPassword(email);
   res
     .status(200)
@@ -197,12 +210,14 @@ const forgotPassword = asyncHandler(async (req, res) => {
 });
 
 const resetPassword = asyncHandler(async (req, res) => {
+  validateResetPassword(req.body);
   const { email, token, newPassword } = req.body;
   await authService.resetPassword({ email, token, newPassword });
   res.status(200).json(new ApiResponse(200, null, "Password reset successful"));
 });
 
 const changePassword = asyncHandler(async (req, res) => {
+  validateChangePassword(req.body);
   const { oldPassword, newPassword } = req.body;
   await authService.changePassword(req.user._id, oldPassword, newPassword);
   clearAuthCookies(res);
