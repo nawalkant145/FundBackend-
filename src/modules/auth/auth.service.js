@@ -256,9 +256,10 @@ const sendPreRegisterOtp = async (email) => {
     text: `Your verification code: ${otp} (valid 10 min)`,
   });
 
-  // In dev, only console log the OTP; never return it in the response
-  // to prevent it from being visible on screen or in network logs.
-  return { sent: true };
+  return {
+    sent: true,
+    ...(process.env.NODE_ENV !== "production" ? { devOtp: otp } : {}),
+  };
 };
 
 // Verify pre-register OTP (before account creation)
@@ -314,9 +315,10 @@ const sendEmailOtp = async (userId) => {
     text: `Your verification code: ${otp} (valid 10 min)`,
   });
 
-  // In dev, only console log the OTP; never return it in the response
-  // to prevent it from being visible on screen or in network logs.
-  return { sent: true };
+  return {
+    sent: true,
+    ...(process.env.NODE_ENV !== "production" ? { devOtp: otp } : {}),
+  };
 };
 
 const verifyEmailOtp = async (userId, otp) => {
@@ -373,9 +375,10 @@ const sendPhoneOtp = async (userId, phone) => {
   }
 
   await sendSms({ phone, otp });
-  // In dev, only console log the OTP; never return it in the response
-  // to prevent it from being visible on screen or in network logs.
-  return { sent: true };
+  return {
+    sent: true,
+    ...(process.env.NODE_ENV !== "production" ? { devOtp: otp } : {}),
+  };
 };
 
 const verifyPhoneOtp = async (userId, otp) => {
