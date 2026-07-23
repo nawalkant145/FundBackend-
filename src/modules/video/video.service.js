@@ -449,7 +449,10 @@ const getMyPitches = async (founderId) => {
 };
 
 // Public — active pitches for a given founder (for their profile page)
-const getUserPitches = async (founderId, viewerId) => {
+const getUserPitches = async (founderIdOrUsername, viewerId) => {
+  const userService = require("../user/user.service");
+  const founderId =
+    (await userService.resolveUserId(founderIdOrUsername)) || founderIdOrUsername;
   const videos = await Video.find({
     founderId,
     status: "active",

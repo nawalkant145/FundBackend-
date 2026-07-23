@@ -87,7 +87,7 @@ const getFeed = async (userId, { cursor, limit = 20 }) => {
   const posts = await Post.find(query)
     .sort({ createdAt: -1 })
     .limit(Number(limit))
-    .populate("authorId", "name username avatar companyName isVerified")
+    .populate("authorId", "name username avatar role companyName isVerified")
     .lean();
 
   // Enrich with isLiked/isSaved for the requesting user
@@ -115,7 +115,7 @@ const getMyPosts = async (userId) => {
 
 const getPostById = async (postId) => {
   const post = await Post.findById(postId)
-    .populate("authorId", "name username avatar companyName isVerified")
+    .populate("authorId", "name username avatar role companyName isVerified")
     .lean();
   if (!post || post.isDeleted) throw new ApiError(404, "Post not found");
   return post;
@@ -186,7 +186,7 @@ const savePost = async (postId, userId) => {
 const getSavedPosts = async (userId) => {
   const posts = await Post.find({ saves: userId, isDeleted: false })
     .sort({ createdAt: -1 })
-    .populate("authorId", "name username avatar companyName isVerified")
+    .populate("authorId", "name username avatar role companyName isVerified")
     .lean();
   const uid = userId.toString();
   return posts.map((p) => ({
@@ -198,8 +198,11 @@ const getSavedPosts = async (userId) => {
   }));
 };
 
-const getUserPosts = async (userId, { cursor, limit = 20 }) => {
-  const query = { authorId: userId, isDeleted: false };
+const getUserPosts = async (userIdOrUsername, { cursor, limit = 20 }) => {
+  const userService = require("../user/user.service");
+  const targetId =
+    (await userService.resolveUserId(userIdOrUsername)) || userIdOrUsername;
+  const query = { authorId: targetId, isDeleted: false };
   if (cursor) query._id = { $lt: cursor };
   return Post.find(query).sort({ createdAt: -1 }).limit(Number(limit)).lean();
 };

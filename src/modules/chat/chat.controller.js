@@ -8,17 +8,29 @@ const {
 } = require("../../utils/cloudinaryUpload");
 
 const startChat = asyncHandler(async (req, res) => {
-  const { founderId } = req.body;
-  if (!founderId) throw new ApiError(400, "founderId required");
+  const targetId =
+    req.body?.founderId ||
+    req.body?.userId ||
+    req.body?.targetId ||
+    req.body?.recipientId ||
+    req.body?.id ||
+    req.params?.targetId ||
+    req.params?.founderId ||
+    req.params?.userId ||
+    req.query?.founderId ||
+    req.query?.userId ||
+    req.query?.targetId;
+
+  if (!targetId) throw new ApiError(400, "Target founder or user ID is required");
   try {
-    const chat = await chatService.startChat(req.user._id, founderId);
+    const chat = await chatService.startChat(req.user._id, targetId);
     res.json(new ApiResponse(200, { chat }, "Chat ready"));
   } catch (error) {
     console.error("=== START CHAT ERROR ===");
     console.error(
       `User (initiator): ${req.user?._id} (${req.user?.name}, Role: ${req.user?.role}, VerificationLevel: ${req.user?.verificationLevel})`,
     );
-    console.error(`Target Founder: ${founderId}`);
+    console.error(`Target Identifier: ${targetId}`);
     console.error(`Error status: ${error.statusCode || 500}`);
     console.error(`Error message: ${error.message}`);
     console.error("========================");

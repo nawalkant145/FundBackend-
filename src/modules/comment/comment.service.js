@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Comment = require("./comment.model");
 const Video = require("../video/video.model");
 const Post = require("../post/post.model");
@@ -19,6 +20,13 @@ const create = async (userId, { videoId, postId, text, parentId }) => {
   if (!text || !text.trim()) throw new ApiError(400, "Comment text required");
   if (!videoId && !postId) {
     throw new ApiError(400, "videoId or postId required");
+  }
+
+  if (videoId && !mongoose.Types.ObjectId.isValid(videoId)) {
+    throw new ApiError(400, "Invalid video ID");
+  }
+  if (postId && !mongoose.Types.ObjectId.isValid(postId)) {
+    throw new ApiError(400, "Invalid post ID");
   }
 
   // Resolve the target (video OR post)
@@ -85,6 +93,12 @@ const create = async (userId, { videoId, postId, text, parentId }) => {
 
 const list = async (target, { cursor, limit = 20, parentId = null } = {}) => {
   limit = Math.min(Number(limit) || 20, 50);
+  if (target.videoId && !mongoose.Types.ObjectId.isValid(target.videoId)) {
+    return { comments: [], nextCursor: null, hasMore: false };
+  }
+  if (target.postId && !mongoose.Types.ObjectId.isValid(target.postId)) {
+    return { comments: [], nextCursor: null, hasMore: false };
+  }
   // target = { videoId } or { postId }
   const q = { parentId, isDeleted: false, isHidden: false };
   if (target.videoId) q.videoId = target.videoId;

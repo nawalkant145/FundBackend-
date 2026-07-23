@@ -15,7 +15,8 @@ const errorHandler = (err, req, res, next) => {
   // Mongoose — bad ObjectId
   if (err.name === "CastError") {
     statusCode = 400;
-    message = `Invalid ${err.path}: ${err.value}`;
+    const fieldName = err.path === "_id" ? "ID" : err.path;
+    message = `Invalid ${fieldName}: ${err.value}`;
   }
 
   // Mongoose — validation
