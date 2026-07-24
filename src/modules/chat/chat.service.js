@@ -113,7 +113,15 @@ const startChat = async (investorId, founderId) => {
       investorId,
     });
   }
-  return chat;
+
+  // Always return a fully-populated chat so the frontend can render it immediately
+  // without waiting for a page refresh / listChats re-fetch.
+  const populated = await Chat.findById(chat._id)
+    .populate("founderId", "name username avatar companyName isOnline lastSeen isVerified")
+    .populate("investorId", "name username avatar isOnline lastSeen isVerified")
+    .lean();
+
+  return populated || chat;
 };
 
 const listChats = async (userId) => {
