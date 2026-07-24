@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Post = require("./post.model");
 const ApiError = require("../../utils/ApiError");
 const cloudinary = require("../../config/cloudinary");
@@ -222,15 +223,21 @@ const savePost = async (postId, userId) => {
 };
 
 const getSavedPosts = async (userId) => {
-  const posts = await Post.find({ saves: userId, isDeleted: false })
+  // Explicitly cast to ObjectId so Mongoose array queries always match
+  const uid = mongoose.Types.ObjectId.isValid(userId)
+    ? new mongoose.Types.ObjectId(userId)
+    : userId;
+
+  const posts = await Post.find({ saves: uid, isDeleted: false })
     .sort({ createdAt: -1 })
     .populate("authorId", "name username avatar role companyName isVerified")
     .lean();
-  const uid = userId.toString();
+
+  const uidStr = uid.toString();
   return posts.map((p) => ({
     ...p,
-    isLiked: (p.likes || []).some((id) => id.toString() === uid),
-    isSaved: true,
+    isLiked: (p.likes || []).some((id) => id.toString() === uidStr),
+    isSaved: true, // always true since we queried for saved posts
     likeCount: (p.likes || []).length,
     saveCount: (p.saves || []).length,
   }));

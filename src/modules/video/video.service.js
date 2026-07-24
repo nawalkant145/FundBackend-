@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Video = require("./video.model");
 const User = require("../user/user.model");
 const ApiError = require("../../utils/ApiError");
@@ -8,6 +9,7 @@ const {
 const { getClient } = require("../../config/redis");
 const { cleanText } = require("../../utils/profanityFilter");
 const settingsService = require("../settings/settings.service");
+
 
 const MIN_DURATION = 60;
 const MAX_DURATION = 120;
@@ -464,11 +466,22 @@ const getUserPitches = async (founderIdOrUsername, viewerId) => {
 };
 
 const getSavedPitches = async (investorId) => {
-  const videos = await Video.find({ saves: investorId, status: { $ne: "deleted" } })
+  // Explicitly cast to ObjectId so Mongoose array queries always match
+  const uid = mongoose.Types.ObjectId.isValid(investorId)
+    ? new mongoose.Types.ObjectId(investorId)
+    : investorId;
+
+  const videos = await Video.find({
+    saves: uid,
+    status: { $ne: "deleted" },
+  })
     .sort({ createdAt: -1 })
-    .populate("founderId", "name avatar companyName industry isVerified")
+    .populate("founderId", "name username avatar companyName industry isVerified")
     .lean();
-  return enrichWithCommentCounts(videos, investorId);
+
+  // Enrich and always mark isSaved: true since we queried for saved videos
+  const enriched = await enrichWithCommentCounts(videos, uid);
+  return enriched.map((v) => ({ ...v, isSaved: true }));
 };
 
 // Helper — add commentCount + isLiked/isSaved + counts to a list of videos
