@@ -306,7 +306,7 @@ const search = async ({
   if (cursor) filter._id = { $lt: cursor };
   const users = await User.find(filter)
     .select(
-      "name avatar role companyName industry isVerified bio fundingStage activePitchId",
+      "name username avatar role companyName industry isVerified bio fundingStage activePitchId isOnline lastSeen",
     )
     .sort({ _id: -1 })
     .limit(limit + 1)

@@ -464,7 +464,7 @@ const getUserPitches = async (founderIdOrUsername, viewerId) => {
 };
 
 const getSavedPitches = async (investorId) => {
-  const videos = await Video.find({ saves: investorId, status: "active" })
+  const videos = await Video.find({ saves: investorId, status: { $ne: "deleted" } })
     .sort({ createdAt: -1 })
     .populate("founderId", "name avatar companyName industry isVerified")
     .lean();
@@ -556,25 +556,29 @@ const renewPitch = async (videoId, founderId) => {
   return video;
 };
 
-// Trending — most liked + saved in last 7 days
+// Trending — most liked + saved + viewed pitches
 const getTrending = async ({ limit = 10 } = {}) => {
   limit = Math.min(Number(limit) || 10, 30);
-  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const videos = await Video.aggregate([
     {
       $match: {
         status: "active",
-        expiresAt: { $gt: new Date() },
-        createdAt: { $gte: since },
+        $or: [
+          { expiresAt: { $gt: new Date() } },
+          { expiresAt: { $exists: false } },
+          { expiresAt: null },
+        ],
       },
     },
     {
       $addFields: {
         score: {
           $add: [
-            { $size: { $ifNull: ["$likes", []] } },
-            { $multiply: [{ $size: { $ifNull: ["$saves", []] } }, 2] },
-            { $multiply: [{ $cond: ["$isBoosted", 50, 0] }, 1] },
+            { $ifNull: ["$views", 0] },
+            { $multiply: [{ $size: { $ifNull: ["$likes", []] } }, 5] },
+            { $multiply: [{ $size: { $ifNull: ["$saves", []] } }, 10] },
+            { $multiply: [{ $ifNull: ["$commentCount", 0] }, 8] },
+            { $multiply: [{ $cond: ["$isBoosted", 100, 0] }, 1] },
           ],
         },
       },
@@ -607,6 +611,7 @@ const getTrending = async ({ limit = 10 } = {}) => {
         createdAt: 1,
         likes: 1,
         saves: 1,
+        commentCount: 1,
         founderId: {
           _id: "$founder._id",
           name: "$founder.name",
@@ -627,13 +632,18 @@ const searchVideos = async ({
   fundingStage,
   minAsk,
   maxAsk,
+  sort,
   limit = 20,
   cursor,
 }) => {
   limit = Math.min(Number(limit) || 20, 50);
   const filter = {
     status: "active",
-    expiresAt: { $gt: new Date() },
+    $or: [
+      { expiresAt: { $gt: new Date() } },
+      { expiresAt: { $exists: false } },
+      { expiresAt: null },
+    ],
   };
   if (industry) filter.industry = industry;
   if (fundingStage) filter.fundingStage = fundingStage;
@@ -642,15 +652,25 @@ const searchVideos = async ({
   if (maxAsk)
     filter.askAmount = { ...(filter.askAmount || {}), $lte: Number(maxAsk) };
   if (q) {
-    filter.$or = [
-      { title: new RegExp(q, "i") },
-      { description: new RegExp(q, "i") },
+    const qRegex = new RegExp(q, "i");
+    filter.$and = [
+      ...(filter.$and || []),
+      {
+        $or: [{ title: qRegex }, { description: qRegex }],
+      },
     ];
   }
   if (cursor) filter._id = { $lt: cursor };
 
+  let sortOption = { createdAt: -1, _id: -1 };
+  if (sort === "trending") {
+    sortOption = { views: -1, commentCount: -1, createdAt: -1 };
+  } else if (sort === "newest" || sort === "new") {
+    sortOption = { createdAt: -1, _id: -1 };
+  }
+
   const videos = await Video.find(filter)
-    .sort({ _id: -1 })
+    .sort(sortOption)
     .limit(limit + 1)
     .populate("founderId", "name avatar companyName isVerified")
     .lean();

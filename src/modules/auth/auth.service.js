@@ -199,13 +199,19 @@ const loginUser = async ({ identifier, email, password }) => {
   user.loginAttempts = 0;
   user.lockUntil = undefined;
   user.lastSeen = new Date();
+  user.isOnline = true;
+  await user.save({ validateBeforeSave: false });
 
   const tokens = await issueTokens(user);
   return { user: user.toSafeJSON(), ...tokens };
 };
 
 const logoutUser = async (userId) => {
-  await User.findByIdAndUpdate(userId, { $unset: { refreshToken: 1 } });
+  await User.findByIdAndUpdate(userId, {
+    isOnline: false,
+    lastSeen: new Date(),
+    $unset: { refreshToken: 1 },
+  });
 };
 
 const refreshAccessToken = async (refreshToken) => {
