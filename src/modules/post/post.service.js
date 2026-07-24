@@ -158,13 +158,32 @@ const likePost = async (postId, userId) => {
   const idx = post.likes.findIndex(
     (id) => id.toString() === userId.toString(),
   );
-  if (idx === -1) {
+  const isLiked = idx === -1;
+  if (isLiked) {
     post.likes.push(userId);
   } else {
     post.likes.splice(idx, 1);
   }
   await post.save();
-  return { liked: idx === -1, count: post.likes.length };
+
+  // Send notification to post author when liked (if not liking own post)
+  if (isLiked && post.authorId && post.authorId.toString() !== userId.toString()) {
+    try {
+      const notif = require("../notification/notification.service");
+      const User = require("../user/user.model");
+      const liker = await User.findById(userId).select("name");
+      await notif.send(post.authorId, {
+        type: "like",
+        title: `${liker?.name || "Someone"} liked your post`,
+        body: post.caption ? post.caption.slice(0, 80) : "Your post",
+        data: { postId: post._id.toString(), likerId: userId.toString() },
+      });
+    } catch (e) {
+      console.error("Failed to send post like notification:", e);
+    }
+  }
+
+  return { liked: isLiked, count: post.likes.length };
 };
 
 const savePost = async (postId, userId) => {
@@ -174,13 +193,32 @@ const savePost = async (postId, userId) => {
   const idx = post.saves.findIndex(
     (id) => id.toString() === userId.toString(),
   );
-  if (idx === -1) {
+  const isSaved = idx === -1;
+  if (isSaved) {
     post.saves.push(userId);
   } else {
     post.saves.splice(idx, 1);
   }
   await post.save();
-  return { saved: idx === -1, count: post.saves.length };
+
+  // Send notification to post author when saved (if not saving own post)
+  if (isSaved && post.authorId && post.authorId.toString() !== userId.toString()) {
+    try {
+      const notif = require("../notification/notification.service");
+      const User = require("../user/user.model");
+      const saver = await User.findById(userId).select("name");
+      await notif.send(post.authorId, {
+        type: "save",
+        title: `${saver?.name || "Someone"} saved your post`,
+        body: post.caption ? post.caption.slice(0, 80) : "Your post",
+        data: { postId: post._id.toString(), saverId: userId.toString() },
+      });
+    } catch (e) {
+      console.error("Failed to send post save notification:", e);
+    }
+  }
+
+  return { saved: isSaved, count: post.saves.length };
 };
 
 const getSavedPosts = async (userId) => {
