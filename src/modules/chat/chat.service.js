@@ -121,9 +121,12 @@ const listChats = async (userId) => {
     .sort({ lastMessageAt: -1 })
     .populate(
       "founderId",
-      "name avatar companyName isOnline lastSeen isVerified",
+      "name username avatar companyName isOnline lastSeen isVerified",
     )
-    .populate("investorId", "name avatar isOnline lastSeen isVerified")
+    .populate(
+      "investorId",
+      "name username avatar isOnline lastSeen isVerified",
+    )
     .lean();
 
   chats.forEach((ch) => {

@@ -297,10 +297,12 @@ const search = async ({
   if (fundingStage) filter.fundingStage = fundingStage;
   if (verified === "true" || verified === true) filter.isVerified = true;
   if (q) {
+    const qClean = q.replace(/^@/, "").trim();
     filter.$or = [
-      { name: new RegExp(q, "i") },
-      { companyName: new RegExp(q, "i") },
-      { industry: new RegExp(q, "i") },
+      { name: new RegExp(qClean, "i") },
+      { username: new RegExp(qClean, "i") },
+      { companyName: new RegExp(qClean, "i") },
+      { industry: new RegExp(qClean, "i") },
     ];
   }
   if (cursor) filter._id = { $lt: cursor };
