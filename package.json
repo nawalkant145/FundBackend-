@@ -5,8 +5,10 @@
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
+    "build": "rimraf dist && copyfiles -u 1 \"src/**/*\" server.js package.json .env.example README.md dist",
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "seed": "node scripts/seedMockData.js"
   },
   "dependencies": {
     "axios": "^1.7.7",
@@ -37,6 +39,7 @@
     "validator": "^13.12.0"
   },
   "devDependencies": {
+    "copyfiles": "^2.4.1",
     "nodemon": "^3.1.4"
   }
 }

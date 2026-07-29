@@ -75,13 +75,11 @@ const createOrder = async (userId) => {
 
   const razorpay = getRazorpay();
 
-  // Dev fallback: no gateway configured → activate immediately
   if (!razorpay) {
-    if (process.env.NODE_ENV === "production") {
-      throw new ApiError(500, "Payment gateway not configured");
-    }
-    await activate(sub);
-    return { subscription: sub, activated: true, devMode: true };
+    throw new ApiError(
+      500,
+      "Payment gateway not configured. Please configure RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.",
+    );
   }
 
   const order = await razorpay.orders.create({

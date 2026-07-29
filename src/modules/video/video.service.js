@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Video = require("./video.model");
 const User = require("../user/user.model");
 const ApiError = require("../../utils/ApiError");
@@ -8,6 +9,7 @@ const {
 const { getClient } = require("../../config/redis");
 const { cleanText } = require("../../utils/profanityFilter");
 const settingsService = require("../settings/settings.service");
+
 
 const MIN_DURATION = 60;
 const MAX_DURATION = 120;
@@ -183,7 +185,15 @@ const getFeed = async (investorId, { cursor, limit = FEED_PAGE_SIZE } = {}) => {
 
   const baseQuery = await buildFeedQuery(investorId);
   if (cursor) {
-    baseQuery._id = { ...(baseQuery._id || {}), $lt: cursor };
+    // BUG-04 FIX: The original code did:
+    //   baseQuery._id = { ...(baseQuery._id || {}), $lt: cursor }
+    // which flat-merges $nin and $lt into the same object.
+    // Although MongoDB supports { $nin:[...], $lt: x } on one field,
+    // this pattern silently overwrites any _id condition added later.
+    // Using $and explicitly composes the cursor bound alongside the existing
+    // $nin:seen filter without touching baseQuery._id, making the query
+    // safe to extend in the future.
+    baseQuery.$and = [...(baseQuery.$and || []), { _id: { $lt: cursor } }];
   }
 
   const videos = await Video.find(baseQuery)
@@ -402,8 +412,27 @@ const logView = async (videoId, investorId, watchedSeconds = 0) => {
   );
   if (isUnique) video.uniqueViews.push(investorId);
 
-  // Increment total view count in the DB so it shows in feeds/analytics.
-  video.views = (video.views || 0) + 1;
+  // BUG-03 FIX: Buffer the total view increment in Redis so the cron job
+  // `flushViewCounts` (cron/index.js) has actual data to flush to MongoDB.
+  // Previously video.views was written directly here, making the cron a dead
+  // no-op (it scanned for keys that were never written). Now we use INCR so
+  // the cron accumulates counts and does a single $inc per video every 5 min,
+  // reducing write load significantly under high traffic.
+  // Fallback: if Redis is unavailable, write directly to MongoDB so dev
+  // environments (which may use the in-memory mock) still function correctly.
+  let redisBuffered = false;
+  try {
+    const redis = getClient();
+    await redis.incr(`video:views:${videoId}`);
+    redisBuffered = true;
+  } catch {
+    // Redis unavailable — fall through to direct write below
+  }
+
+  if (!redisBuffered) {
+    // Direct fallback when Redis is down
+    video.views = (video.views || 0) + 1;
+  }
 
   if (watchedSeconds > 0) {
     video.watchTimeData.push({
@@ -422,7 +451,10 @@ const getMyPitches = async (founderId) => {
 };
 
 // Public — active pitches for a given founder (for their profile page)
-const getUserPitches = async (founderId, viewerId) => {
+const getUserPitches = async (founderIdOrUsername, viewerId) => {
+  const userService = require("../user/user.service");
+  const founderId =
+    (await userService.resolveUserId(founderIdOrUsername)) || founderIdOrUsername;
   const videos = await Video.find({
     founderId,
     status: "active",
@@ -434,11 +466,22 @@ const getUserPitches = async (founderId, viewerId) => {
 };
 
 const getSavedPitches = async (investorId) => {
-  const videos = await Video.find({ saves: investorId, status: "active" })
+  // Explicitly cast to ObjectId so Mongoose array queries always match
+  const uid = mongoose.Types.ObjectId.isValid(investorId)
+    ? new mongoose.Types.ObjectId(investorId)
+    : investorId;
+
+  const videos = await Video.find({
+    saves: uid,
+    status: { $ne: "deleted" },
+  })
     .sort({ createdAt: -1 })
-    .populate("founderId", "name avatar companyName industry isVerified")
+    .populate("founderId", "name username avatar companyName industry isVerified")
     .lean();
-  return enrichWithCommentCounts(videos, investorId);
+
+  // Enrich and always mark isSaved: true since we queried for saved videos
+  const enriched = await enrichWithCommentCounts(videos, uid);
+  return enriched.map((v) => ({ ...v, isSaved: true }));
 };
 
 // Helper — add commentCount + isLiked/isSaved + counts to a list of videos
@@ -526,25 +569,29 @@ const renewPitch = async (videoId, founderId) => {
   return video;
 };
 
-// Trending — most liked + saved in last 7 days
+// Trending — most liked + saved + viewed pitches
 const getTrending = async ({ limit = 10 } = {}) => {
   limit = Math.min(Number(limit) || 10, 30);
-  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const videos = await Video.aggregate([
     {
       $match: {
         status: "active",
-        expiresAt: { $gt: new Date() },
-        createdAt: { $gte: since },
+        $or: [
+          { expiresAt: { $gt: new Date() } },
+          { expiresAt: { $exists: false } },
+          { expiresAt: null },
+        ],
       },
     },
     {
       $addFields: {
         score: {
           $add: [
-            { $size: { $ifNull: ["$likes", []] } },
-            { $multiply: [{ $size: { $ifNull: ["$saves", []] } }, 2] },
-            { $multiply: [{ $cond: ["$isBoosted", 50, 0] }, 1] },
+            { $ifNull: ["$views", 0] },
+            { $multiply: [{ $size: { $ifNull: ["$likes", []] } }, 5] },
+            { $multiply: [{ $size: { $ifNull: ["$saves", []] } }, 10] },
+            { $multiply: [{ $ifNull: ["$commentCount", 0] }, 8] },
+            { $multiply: [{ $cond: ["$isBoosted", 100, 0] }, 1] },
           ],
         },
       },
@@ -577,6 +624,7 @@ const getTrending = async ({ limit = 10 } = {}) => {
         createdAt: 1,
         likes: 1,
         saves: 1,
+        commentCount: 1,
         founderId: {
           _id: "$founder._id",
           name: "$founder.name",
@@ -597,13 +645,18 @@ const searchVideos = async ({
   fundingStage,
   minAsk,
   maxAsk,
+  sort,
   limit = 20,
   cursor,
 }) => {
   limit = Math.min(Number(limit) || 20, 50);
   const filter = {
     status: "active",
-    expiresAt: { $gt: new Date() },
+    $or: [
+      { expiresAt: { $gt: new Date() } },
+      { expiresAt: { $exists: false } },
+      { expiresAt: null },
+    ],
   };
   if (industry) filter.industry = industry;
   if (fundingStage) filter.fundingStage = fundingStage;
@@ -612,15 +665,25 @@ const searchVideos = async ({
   if (maxAsk)
     filter.askAmount = { ...(filter.askAmount || {}), $lte: Number(maxAsk) };
   if (q) {
-    filter.$or = [
-      { title: new RegExp(q, "i") },
-      { description: new RegExp(q, "i") },
+    const qRegex = new RegExp(q, "i");
+    filter.$and = [
+      ...(filter.$and || []),
+      {
+        $or: [{ title: qRegex }, { description: qRegex }],
+      },
     ];
   }
   if (cursor) filter._id = { $lt: cursor };
 
+  let sortOption = { createdAt: -1, _id: -1 };
+  if (sort === "trending") {
+    sortOption = { views: -1, commentCount: -1, createdAt: -1 };
+  } else if (sort === "newest" || sort === "new") {
+    sortOption = { createdAt: -1, _id: -1 };
+  }
+
   const videos = await Video.find(filter)
-    .sort({ _id: -1 })
+    .sort(sortOption)
     .limit(limit + 1)
     .populate("founderId", "name avatar companyName isVerified")
     .lean();

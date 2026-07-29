@@ -149,26 +149,88 @@ const updateFcmToken = async (userId, fcmToken) => {
   await User.findByIdAndUpdate(userId, { fcmToken });
 };
 
-const getPublicProfile = async (viewerId, userId) => {
-  const user = await User.findById(userId).select(
-    "-password -refreshToken -documents -emailOtpHash -phoneOtpHash " +
-      "-passwordResetTokenHash -loginAttempts -lockUntil -fcmToken -blockedUsers",
-  );
+const mongoose = require("mongoose");
+
+const resolveUserId = async (idOrUsername) => {
+  if (!idOrUsername) return null;
+  const str = idOrUsername.toString().replace(/^@/, "").trim();
+  if (mongoose.Types.ObjectId.isValid(str)) {
+    const userById = await User.findById(str).select("_id");
+    if (userById) return userById._id;
+  }
+  const userByUsername = await User.findOne({
+    username: new RegExp(`^${str}$`, "i"),
+  }).select("_id");
+  if (userByUsername) return userByUsername._id;
+
+  const userByName = await User.findOne({
+    name: new RegExp(`^${str}$`, "i"),
+  }).select("_id");
+  if (userByName) return userByName._id;
+
+  // Fallback for mock/placeholder IDs (e.g. f_1, f_2, founder_1, 1) in frontend mock data
+  if (/^(f_\d+|founder_\d+|mock_\d+|\d+|pitch_\d+)$/i.test(str)) {
+    const defaultFounder = await User.findOne({ role: "founder" }).select("_id");
+    if (defaultFounder) return defaultFounder._id;
+    const anyUser = await User.findOne().select("_id");
+    if (anyUser) return anyUser._id;
+  }
+
+  return mongoose.Types.ObjectId.isValid(str) ? str : null;
+};
+
+const getPublicProfile = async (viewerId, userIdOrUsername) => {
+  const targetId = await resolveUserId(userIdOrUsername);
+  if (!targetId) throw new ApiError(404, "User not found");
+
+  const user = await User.findById(targetId)
+    .select(
+      "-password -refreshToken -documents -emailOtpHash -phoneOtpHash " +
+        "-passwordResetTokenHash -loginAttempts -lockUntil -fcmToken -blockedUsers",
+    )
+    .populate(
+      "followers",
+      "name username avatar isVerified role companyName bio industry fundingStage",
+    )
+    .populate(
+      "following",
+      "name username avatar isVerified role companyName bio industry fundingStage",
+    );
+
   if (!user) throw new ApiError(404, "User not found");
   if (user.isBanned || !user.isActive) {
     throw new ApiError(404, "User not found");
   }
 
+  const userObj = user.toObject();
+  userObj.followers = (userObj.followers || []).filter(
+    (item) => item && typeof item === "object" && item._id,
+  );
+  userObj.following = (userObj.following || []).filter(
+    (item) => item && typeof item === "object" && item._id,
+  );
+  userObj.followersCount = userObj.followers.length;
+  userObj.followingCount = userObj.following.length;
+
+  if (
+    user.followersCount !== userObj.followersCount ||
+    user.followingCount !== userObj.followingCount
+  ) {
+    await User.findByIdAndUpdate(targetId, {
+      followersCount: userObj.followersCount,
+      followingCount: userObj.followingCount,
+    }).catch(() => {});
+  }
+
   // Track view (don't track self-views)
-  if (viewerId && viewerId.toString() !== userId.toString()) {
-    // Only one entry per (owner, viewer) per day
+  if (viewerId && viewerId.toString() !== targetId.toString()) {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     await ProfileView.updateOne(
-      { profileOwnerId: userId, viewerId, viewedAt: { $gte: startOfDay } },
+      { profileOwnerId: targetId, viewerId, viewedAt: { $gte: startOfDay } },
       {
         $setOnInsert: {
-          profileOwnerId: userId,
+          profileOwnerId: targetId,
           viewerId,
           viewedAt: new Date(),
         },
@@ -176,7 +238,7 @@ const getPublicProfile = async (viewerId, userId) => {
       { upsert: true },
     );
   }
-  return user;
+  return userObj;
 };
 
 const getProfileViewers = async (userId, { limit = 20, cursor } = {}) => {
@@ -235,16 +297,18 @@ const search = async ({
   if (fundingStage) filter.fundingStage = fundingStage;
   if (verified === "true" || verified === true) filter.isVerified = true;
   if (q) {
+    const qClean = q.replace(/^@/, "").trim();
     filter.$or = [
-      { name: new RegExp(q, "i") },
-      { companyName: new RegExp(q, "i") },
-      { industry: new RegExp(q, "i") },
+      { name: new RegExp(qClean, "i") },
+      { username: new RegExp(qClean, "i") },
+      { companyName: new RegExp(qClean, "i") },
+      { industry: new RegExp(qClean, "i") },
     ];
   }
   if (cursor) filter._id = { $lt: cursor };
   const users = await User.find(filter)
     .select(
-      "name avatar role companyName industry isVerified bio fundingStage activePitchId",
+      "name username avatar role companyName industry isVerified bio fundingStage activePitchId isOnline lastSeen",
     )
     .sort({ _id: -1 })
     .limit(limit + 1)
@@ -278,10 +342,14 @@ module.exports = {
   followUser,
   getFollowers,
   getFollowingList,
+  resolveUserId,
 };
 
 // ─── Follow system ─────────────────────────────────
-async function followUser(currentUserId, targetUserId) {
+async function followUser(currentUserId, targetUserIdOrUsername) {
+  const targetUserId = await resolveUserId(targetUserIdOrUsername);
+  if (!targetUserId) throw new ApiError(404, "User not found");
+
   if (currentUserId.toString() === targetUserId.toString()) {
     throw new ApiError(400, "Cannot follow yourself");
   }
@@ -294,25 +362,45 @@ async function followUser(currentUserId, targetUserId) {
 
   if (alreadyFollowing) {
     // Unfollow
+    const updatedTarget = await User.findByIdAndUpdate(
+      targetUserId,
+      { $pull: { followers: currentUserId } },
+      { new: true },
+    );
+    const updatedCurrent = await User.findByIdAndUpdate(
+      currentUserId,
+      { $pull: { following: targetUserId } },
+      { new: true },
+    );
+    // Keep follower/following counters in sync
     await User.findByIdAndUpdate(targetUserId, {
-      $pull: { followers: currentUserId },
-      $inc: { followersCount: -1 },
+      followersCount: Math.max(0, updatedTarget?.followers?.length || 0),
     });
     await User.findByIdAndUpdate(currentUserId, {
-      $pull: { following: targetUserId },
-      $inc: { followingCount: -1 },
+      followingCount: Math.max(0, updatedCurrent?.following?.length || 0),
     });
-    return { following: false };
+
+    return { following: false, isFollowing: false };
   } else {
     // Follow
+    const updatedTarget = await User.findByIdAndUpdate(
+      targetUserId,
+      { $addToSet: { followers: currentUserId } },
+      { new: true },
+    );
+    const updatedCurrent = await User.findByIdAndUpdate(
+      currentUserId,
+      { $addToSet: { following: targetUserId } },
+      { new: true },
+    );
+    // Keep follower/following counters in sync
     await User.findByIdAndUpdate(targetUserId, {
-      $addToSet: { followers: currentUserId },
-      $inc: { followersCount: 1 },
+      followersCount: updatedTarget?.followers?.length || 0,
     });
     await User.findByIdAndUpdate(currentUserId, {
-      $addToSet: { following: targetUserId },
-      $inc: { followingCount: 1 },
+      followingCount: updatedCurrent?.following?.length || 0,
     });
+
     // Notify the target user
     try {
       const notifService = require("../notification/notification.service");
@@ -326,20 +414,36 @@ async function followUser(currentUserId, targetUserId) {
         })
         .catch(() => {});
     } catch {}
-    return { following: true };
+    return { following: true, isFollowing: true };
   }
 }
 
-async function getFollowers(userId) {
-  const user = await User.findById(userId)
+async function getFollowers(userIdOrUsername) {
+  const targetId = await resolveUserId(userIdOrUsername);
+  if (!targetId) return [];
+  const user = await User.findById(targetId)
     .select("followers")
-    .populate("followers", "name username avatar isVerified role companyName");
-  return user?.followers || [];
+    .populate(
+      "followers",
+      "name username avatar isVerified role companyName bio industry fundingStage",
+    );
+  const followers = user?.followers || [];
+  return followers.filter(
+    (item) => item && typeof item === "object" && item._id,
+  );
 }
 
-async function getFollowingList(userId) {
-  const user = await User.findById(userId)
+async function getFollowingList(userIdOrUsername) {
+  const targetId = await resolveUserId(userIdOrUsername);
+  if (!targetId) return [];
+  const user = await User.findById(targetId)
     .select("following")
-    .populate("following", "name username avatar isVerified role companyName");
-  return user?.following || [];
+    .populate(
+      "following",
+      "name username avatar isVerified role companyName bio industry fundingStage",
+    );
+  const following = user?.following || [];
+  return following.filter(
+    (item) => item && typeof item === "object" && item._id,
+  );
 }

@@ -7,8 +7,16 @@ const { uploadDocument } = require("../../middlewares/upload.middleware");
 router.use(authenticate);
 
 router.post("/start", c.startChat);
+router.post("/start/:targetId", c.startChat);
+router.get("/start/:targetId", c.startChat);
+
+router.get("/", c.listChats);
 router.get("/list", c.listChats);
+router.get("/conversations", c.listChats);
+
 router.get("/unread-total", c.totalUnreadCount);
+router.get("/unread-count", c.totalUnreadCount);
+
 router.get("/:chatId/messages", c.getMessages);
 router.post("/:chatId/messages", c.sendMessage);
 router.post(

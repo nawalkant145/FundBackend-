@@ -22,6 +22,10 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
       index: true,
+      validate: {
+        validator: (v) => require("../auth/auth.validation").isValidEmail(v),
+        message: "Please enter a valid email address",
+      },
     },
     password: { type: String, required: true, minlength: 8, select: false },
     role: {
@@ -32,7 +36,18 @@ const userSchema = new mongoose.Schema(
     },
     avatar: { type: String, default: "" },
     avatarPublicId: { type: String, default: "" },
-    phone: { type: String, default: "", index: true },
+    phone: {
+      type: String,
+      default: "",
+      index: true,
+      validate: {
+        validator: function (v) {
+          if (!v) return true; // optional in schema
+          return require("../auth/auth.validation").isValidPhone(v);
+        },
+        message: "Please enter a valid phone number",
+      },
+    },
     country: { type: String, default: "" },
     bio: { type: String, default: "" },
 

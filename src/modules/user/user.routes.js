@@ -39,8 +39,8 @@ router.delete("/account", c.deleteAccount);
 
 // Follow system
 router.post("/follow/:userId", c.followUser);
-router.get("/followers/:userId", c.getFollowers);
-router.get("/following/:userId", c.getFollowingList);
+router.get("/followers/:userId?", c.getFollowers);
+router.get("/following/:userId?", c.getFollowingList);
 router.get("/following-check/:userId", c.checkFollowing);
 
 module.exports = router;

@@ -97,24 +97,54 @@ const followUser = asyncHandler(async (req, res) => {
 });
 
 const getFollowers = asyncHandler(async (req, res) => {
-  const userId = req.params.userId || req.user._id;
+  const userId = req.params.userId || req.query.userId || req.user._id;
   const users = await userService.getFollowers(userId);
-  res.json(new ApiResponse(200, { users }, "Followers"));
+  res.json(
+    new ApiResponse(
+      200,
+      { users, followers: users, list: users },
+      "Followers",
+    ),
+  );
 });
 
 const getFollowingList = asyncHandler(async (req, res) => {
-  const userId = req.params.userId || req.user._id;
+  const userId = req.params.userId || req.query.userId || req.user._id;
   const users = await userService.getFollowingList(userId);
-  res.json(new ApiResponse(200, { users }, "Following"));
+  res.json(
+    new ApiResponse(
+      200,
+      { users, following: users, list: users },
+      "Following",
+    ),
+  );
 });
 
 const checkFollowing = asyncHandler(async (req, res) => {
+  const targetId = await userService.resolveUserId(
+    req.params.userId || req.query.userId,
+  );
+  if (!targetId) {
+    return res.json(
+      new ApiResponse(
+        200,
+        { isFollowing: false, following: false },
+        "Follow check",
+      ),
+    );
+  }
   const User = require("./user.model");
   const me = await User.findById(req.user._id).select("following");
   const isFollowing = (me?.following || []).some(
-    (id) => id.toString() === req.params.userId,
+    (id) => id.toString() === targetId.toString(),
   );
-  res.json(new ApiResponse(200, { isFollowing }, "Follow check"));
+  res.json(
+    new ApiResponse(
+      200,
+      { isFollowing, following: isFollowing },
+      "Follow check",
+    ),
+  );
 });
 
 module.exports = {
