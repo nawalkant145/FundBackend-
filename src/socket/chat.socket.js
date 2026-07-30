@@ -5,19 +5,20 @@ module.exports = (io, socket) => {
   // Join a chat room
   socket.on("join_chat", async ({ chatId }) => {
     try {
+      if (!chatId) return;
       // Verify membership
       const result = await chatService.getMessages(chatId, socket.userId, {
         limit: 1,
       });
       if (!result) return;
-      socket.join(chatId);
+      socket.join(chatId.toString());
     } catch (e) {
       socket.emit("error", { message: e.message });
     }
   });
 
   socket.on("leave_chat", ({ chatId }) => {
-    socket.leave(chatId);
+    if (chatId) socket.leave(chatId.toString());
   });
 
   socket.on("send_message", async ({ chatId, text, type, fileUrl }, ack) => {
@@ -29,12 +30,12 @@ module.exports = (io, socket) => {
         type,
         fileUrl,
       });
-      io.to(chatId).emit("new_message", message);
+      io.to(chatId.toString()).emit("new_message", message);
 
       // Notify the other participant if not in the room
       const otherId = chat.participants
         .map((id) => id.toString())
-        .find((id) => id !== socket.userId);
+        .find((id) => id !== socket.userId.toString());
       if (otherId) {
         notif
           .send(otherId, {
@@ -53,18 +54,19 @@ module.exports = (io, socket) => {
   });
 
   socket.on("typing", ({ chatId }) => {
-    socket.to(chatId).emit("user_typing", { userId: socket.userId });
+    if (chatId) socket.to(chatId.toString()).emit("user_typing", { userId: socket.userId });
   });
 
   socket.on("stop_typing", ({ chatId }) => {
-    socket.to(chatId).emit("user_stop_typing", { userId: socket.userId });
+    if (chatId) socket.to(chatId.toString()).emit("user_stop_typing", { userId: socket.userId });
   });
 
   socket.on("mark_read", async ({ chatId }) => {
     try {
+      if (!chatId) return;
       await chatService.markRead(chatId, socket.userId);
       socket
-        .to(chatId)
+        .to(chatId.toString())
         .emit("messages_read", { chatId, userId: socket.userId });
     } catch (e) {
       socket.emit("error", { message: e.message });
