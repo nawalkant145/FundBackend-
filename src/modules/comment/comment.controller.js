@@ -7,9 +7,27 @@ const Post = require("../post/post.model");
 
 const create = asyncHandler(async (req, res) => {
   const comment = await commentService.create(req.user._id, req.body);
-  // Notify the content owner of a new comment (top-level only, not own content)
+  // Notify the content owner / parent comment author of new comment / reply
   try {
-    if (req.body.videoId) {
+    if (req.body.parentId) {
+      const Comment = require("./comment.model");
+      const parentComment = await Comment.findById(req.body.parentId);
+      if (parentComment && parentComment.userId.toString() !== req.user._id.toString()) {
+        notif
+          .send(parentComment.userId, {
+            type: "system",
+            title: `${req.user.name} replied to your comment`,
+            body: req.body.text.slice(0, 100),
+            data: {
+              videoId: req.body.videoId ? req.body.videoId.toString() : null,
+              postId: req.body.postId ? req.body.postId.toString() : null,
+              commentId: comment._id.toString(),
+              parentId: req.body.parentId.toString(),
+            },
+          })
+          .catch(() => {});
+      }
+    } else if (req.body.videoId) {
       const video = await Video.findById(req.body.videoId);
       if (video && video.founderId.toString() !== req.user._id.toString()) {
         notif
@@ -51,6 +69,7 @@ const list = asyncHandler(async (req, res) => {
       cursor: req.query.cursor,
       limit: req.query.limit,
       parentId: req.query.parentId || null,
+      viewerId: req.user?._id,
     },
   );
   res.json(new ApiResponse(200, result, "Comments"));
@@ -63,6 +82,7 @@ const listByPost = asyncHandler(async (req, res) => {
       cursor: req.query.cursor,
       limit: req.query.limit,
       parentId: req.query.parentId || null,
+      viewerId: req.user?._id,
     },
   );
   res.json(new ApiResponse(200, result, "Comments"));
@@ -78,8 +98,8 @@ const update = asyncHandler(async (req, res) => {
 });
 
 const remove = asyncHandler(async (req, res) => {
-  await commentService.remove(req.params.id, req.user._id);
-  res.json(new ApiResponse(200, null, "Comment deleted"));
+  const result = await commentService.remove(req.params.id, req.user._id);
+  res.json(new ApiResponse(200, result, "Comment deleted"));
 });
 
 const like = asyncHandler(async (req, res) => {

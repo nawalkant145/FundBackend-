@@ -26,17 +26,23 @@ const feed = asyncHandler(async (req, res) => {
 });
 
 const trending = asyncHandler(async (req, res) => {
-  const videos = await videoService.getTrending({ limit: req.query.limit });
+  const videos = await videoService.getTrending({
+    limit: req.query.limit,
+    userId: req.user._id,
+  });
   res.json(new ApiResponse(200, { videos }, "Trending pitches"));
 });
 
 const search = asyncHandler(async (req, res) => {
-  const result = await videoService.searchVideos(req.query);
+  const result = await videoService.searchVideos({
+    ...req.query,
+    userId: req.user._id,
+  });
   res.json(new ApiResponse(200, result, "Search results"));
 });
 
 const getOne = asyncHandler(async (req, res) => {
-  const video = await videoService.getVideoById(req.params.id);
+  const video = await videoService.getVideoById(req.params.id, req.user._id);
   res.json(new ApiResponse(200, { video }, "Video fetched"));
 });
 

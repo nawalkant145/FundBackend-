@@ -70,6 +70,17 @@ const initSocket = (httpServer) => {
       } catch {}
     });
 
+    // Target room subscription for pitches/posts
+    socket.on("join_target", ({ videoId, postId }) => {
+      if (videoId) socket.join(`video:${videoId}`);
+      if (postId) socket.join(`post:${postId}`);
+    });
+
+    socket.on("leave_target", ({ videoId, postId }) => {
+      if (videoId) socket.leave(`video:${videoId}`);
+      if (postId) socket.leave(`post:${postId}`);
+    });
+
     chatHandlers(io, socket);
     callHandlers(io, socket);
 

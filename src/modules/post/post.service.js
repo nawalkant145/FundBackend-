@@ -4,6 +4,11 @@ const ApiError = require("../../utils/ApiError");
 const cloudinary = require("../../config/cloudinary");
 const { cleanText } = require("../../utils/profanityFilter");
 const settingsService = require("../settings/settings.service");
+const {
+  toObjectId,
+  enrichPost,
+  enrichPosts,
+} = require("../../utils/engagement");
 
 const MAX_POSTS_PER_DAY = 10;
 const MAX_IMAGES = 10;
@@ -81,6 +86,8 @@ const createPost = async (userId, files, body) => {
   return post.toObject();
 };
 
+// enrichPost / enrichPosts are now imported from src/utils/engagement.js
+
 const getFeed = async (userId, { cursor, limit = 20 }) => {
   const query = { isDeleted: false };
   if (cursor) query._id = { $lt: cursor };
@@ -91,15 +98,7 @@ const getFeed = async (userId, { cursor, limit = 20 }) => {
     .populate("authorId", "name username avatar role companyName isVerified")
     .lean();
 
-  // Enrich with isLiked/isSaved for the requesting user
-  const uid = userId.toString();
-  const enriched = posts.map((p) => ({
-    ...p,
-    isLiked: (p.likes || []).some((id) => id.toString() === uid),
-    isSaved: (p.saves || []).some((id) => id.toString() === uid),
-    likeCount: (p.likes || []).length,
-    saveCount: (p.saves || []).length,
-  }));
+  const enriched = enrichPosts(posts, userId);
 
   return {
     posts: enriched,
@@ -109,17 +108,19 @@ const getFeed = async (userId, { cursor, limit = 20 }) => {
 };
 
 const getMyPosts = async (userId) => {
-  return Post.find({ authorId: userId, isDeleted: false })
+  const posts = await Post.find({ authorId: userId, isDeleted: false })
     .sort({ createdAt: -1 })
+    .populate("authorId", "name username avatar role companyName isVerified")
     .lean();
+  return enrichPosts(posts, userId);
 };
 
-const getPostById = async (postId) => {
+const getPostById = async (postId, userId) => {
   const post = await Post.findById(postId)
     .populate("authorId", "name username avatar role companyName isVerified")
     .lean();
   if (!post || post.isDeleted) throw new ApiError(404, "Post not found");
-  return post;
+  return enrichPost(post, userId);
 };
 
 const deletePost = async (postId, userId) => {
@@ -148,27 +149,41 @@ const updatePost = async (postId, userId, body) => {
     ).map((h) => h.trim().replace(/^#/, ""));
   }
   await post.save();
-  return post.toObject();
+  // Re-fetch as lean with populated author so the response is consistent
+  const fresh = await Post.findById(post._id)
+    .populate("authorId", "name username avatar role companyName isVerified")
+    .lean();
+  return enrichPost(fresh, userId);
 };
 
 const likePost = async (postId, userId) => {
   const post = await Post.findById(postId);
   if (!post) throw new ApiError(404, "Post not found");
-  // BUG-01 FIX: .indexOf() uses reference equality and always returns -1 for
-  // ObjectId objects. Use .findIndex() with .toString() comparison instead.
-  const idx = post.likes.findIndex(
-    (id) => id.toString() === userId.toString(),
+
+  const uid = toObjectId(userId);
+  const uidStr = userId.toString();
+
+  const liked = (post.likes || []).some(
+    (id) => id && id.toString() === uidStr,
   );
-  const isLiked = idx === -1;
-  if (isLiked) {
-    post.likes.push(userId);
+
+  let updatedPost;
+  if (liked) {
+    updatedPost = await Post.findByIdAndUpdate(
+      postId,
+      { $pull: { likes: { $in: [uid, uidStr] } } },
+      { new: true },
+    );
   } else {
-    post.likes.splice(idx, 1);
+    updatedPost = await Post.findByIdAndUpdate(
+      postId,
+      { $addToSet: { likes: uid } },
+      { new: true },
+    );
   }
-  await post.save();
 
   // Send notification to post author when liked (if not liking own post)
-  if (isLiked && post.authorId && post.authorId.toString() !== userId.toString()) {
+  if (!liked && post.authorId && post.authorId.toString() !== uidStr) {
     try {
       const notif = require("../notification/notification.service");
       const User = require("../user/user.model");
@@ -177,33 +192,67 @@ const likePost = async (postId, userId) => {
         type: "like",
         title: `${liker?.name || "Someone"} liked your post`,
         body: post.caption ? post.caption.slice(0, 80) : "Your post",
-        data: { postId: post._id.toString(), likerId: userId.toString() },
+        data: { postId: post._id.toString(), likerId: uidStr },
       });
     } catch (e) {
       console.error("Failed to send post like notification:", e);
     }
   }
 
-  return { liked: isLiked, count: post.likes.length };
+  const total = (updatedPost.likes || []).length;
+  const result = {
+    liked: !liked,
+    likeCount: total,
+    count: total,
+    totalLikes: total,
+  };
+
+  // Broadcast real-time engagement update to all connected clients
+  try {
+    const { getIO } = require("../../socket");
+    const io = getIO();
+    if (io) {
+      io.emit("post:engagement", {
+        postId: postId.toString(),
+        liked: !liked,
+        likeCount: total,
+        count: total,
+        totalLikes: total,
+      });
+    }
+  } catch {}
+
+  return result;
 };
 
 const savePost = async (postId, userId) => {
   const post = await Post.findById(postId);
   if (!post) throw new ApiError(404, "Post not found");
-  // BUG-01 FIX: same as likePost — .indexOf() always returns -1 for ObjectIds.
-  const idx = post.saves.findIndex(
-    (id) => id.toString() === userId.toString(),
+
+  const uid = toObjectId(userId);
+  const uidStr = userId.toString();
+
+  const saved = (post.saves || []).some(
+    (id) => id && id.toString() === uidStr,
   );
-  const isSaved = idx === -1;
-  if (isSaved) {
-    post.saves.push(userId);
+
+  let updatedPost;
+  if (saved) {
+    updatedPost = await Post.findByIdAndUpdate(
+      postId,
+      { $pull: { saves: { $in: [uid, uidStr] } } },
+      { new: true },
+    );
   } else {
-    post.saves.splice(idx, 1);
+    updatedPost = await Post.findByIdAndUpdate(
+      postId,
+      { $addToSet: { saves: uid } },
+      { new: true },
+    );
   }
-  await post.save();
 
   // Send notification to post author when saved (if not saving own post)
-  if (isSaved && post.authorId && post.authorId.toString() !== userId.toString()) {
+  if (!saved && post.authorId && post.authorId.toString() !== uidStr) {
     try {
       const notif = require("../notification/notification.service");
       const User = require("../user/user.model");
@@ -212,44 +261,65 @@ const savePost = async (postId, userId) => {
         type: "save",
         title: `${saver?.name || "Someone"} saved your post`,
         body: post.caption ? post.caption.slice(0, 80) : "Your post",
-        data: { postId: post._id.toString(), saverId: userId.toString() },
+        data: { postId: post._id.toString(), saverId: uidStr },
       });
     } catch (e) {
       console.error("Failed to send post save notification:", e);
     }
   }
 
-  return { saved: isSaved, count: post.saves.length };
+  const total = (updatedPost.saves || []).length;
+  const result = {
+    saved: !saved,
+    saveCount: total,
+    count: total,
+    totalSaves: total,
+  };
+
+  // Broadcast real-time engagement update to all connected clients
+  try {
+    const { getIO } = require("../../socket");
+    const io = getIO();
+    if (io) {
+      io.emit("post:engagement", {
+        postId: postId.toString(),
+        saved: !saved,
+        saveCount: total,
+        count: total,
+        totalSaves: total,
+      });
+    }
+  } catch {}
+
+  return result;
 };
 
 const getSavedPosts = async (userId) => {
   // Explicitly cast to ObjectId so Mongoose array queries always match
-  const uid = mongoose.Types.ObjectId.isValid(userId)
-    ? new mongoose.Types.ObjectId(userId)
-    : userId;
+  const uid = toObjectId(userId);
 
   const posts = await Post.find({ saves: uid, isDeleted: false })
     .sort({ createdAt: -1 })
     .populate("authorId", "name username avatar role companyName isVerified")
     .lean();
 
-  const uidStr = uid.toString();
-  return posts.map((p) => ({
-    ...p,
-    isLiked: (p.likes || []).some((id) => id.toString() === uidStr),
-    isSaved: true, // always true since we queried for saved posts
-    likeCount: (p.likes || []).length,
-    saveCount: (p.saves || []).length,
-  }));
+  const enriched = enrichPosts(posts, userId);
+  // Ensure isSaved is explicitly true for all saved posts
+  return enriched.map((p) => ({ ...p, isSaved: true }));
 };
 
-const getUserPosts = async (userIdOrUsername, { cursor, limit = 20 }) => {
+const getUserPosts = async (userIdOrUsername, { cursor, limit = 20, viewerId }) => {
   const userService = require("../user/user.service");
   const targetId =
     (await userService.resolveUserId(userIdOrUsername)) || userIdOrUsername;
   const query = { authorId: targetId, isDeleted: false };
   if (cursor) query._id = { $lt: cursor };
-  return Post.find(query).sort({ createdAt: -1 }).limit(Number(limit)).lean();
+  const posts = await Post.find(query)
+    .sort({ createdAt: -1 })
+    .limit(Number(limit))
+    .populate("authorId", "name username avatar role companyName isVerified")
+    .lean();
+  return enrichPosts(posts, viewerId);
 };
 
 module.exports = {
