@@ -9,6 +9,11 @@ const {
 const { getClient } = require("../../config/redis");
 const { cleanText } = require("../../utils/profanityFilter");
 const settingsService = require("../settings/settings.service");
+const {
+  toObjectId,
+  enrichVideo,
+  enrichVideos,
+} = require("../../utils/engagement");
 
 
 const MIN_DURATION = 60;
@@ -148,29 +153,30 @@ const buildFeedQuery = async (userId) => {
   if (!user) throw new ApiError(404, "User not found");
 
   const blocked = user.blockedUsers || [];
-  const seen = await Video.find({
-    $or: [{ notInterested: userId }],
-  }).distinct("_id");
+  // Fetch IDs of videos the user marked as "not interested"
+  const seen = await Video.find({ notInterested: userId }).distinct("_id");
 
-  const query = {
-    status: "active",
-    expiresAt: { $gt: new Date() },
-    _id: { $nin: seen },
-    founderId: { $nin: blocked }, // exclude blocked users only (NOT self)
-  };
+  // Use $and array so cursor conditions appended later compose cleanly.
+  const $and = [
+    { status: "active" },
+    { expiresAt: { $gt: new Date() } },
+    { _id: { $nin: seen } },
+    { founderId: { $nin: blocked } },
+  ];
 
   // Founders can only see pitches marked "everyone" (not "investors-only")
   if (user.role === "founder") {
-    query.visibility = { $ne: "investors-only" };
+    $and.push({ visibility: { $ne: "investors-only" } });
   }
 
-  if (user.preferredIndustries?.length) {
-    query.$or = [
-      { industry: { $in: user.preferredIndustries } },
-      { industry: "" },
-    ];
-  }
-  return query;
+  // IMPORTANT: Do NOT hard-filter by preferredIndustries here.
+  // Previously this filtered OUT pitches whose industry didn't match the
+  // investor's preferences — causing an empty feed whenever no active pitch
+  // matched (e.g. investor prefers "FoodTech" but all pitches are HealthTech).
+  // Instead we return the user's preferred industries so getFeed can use them
+  // as a SOFT sort signal (preferred-industry pitches float to the top) while
+  // ALL eligible pitches are always visible.
+  return { $and, preferredIndustries: user.preferredIndustries || [] };
 };
 
 const getFeed = async (investorId, { cursor, limit = FEED_PAGE_SIZE } = {}) => {
@@ -183,28 +189,102 @@ const getFeed = async (investorId, { cursor, limit = FEED_PAGE_SIZE } = {}) => {
     if (cached) return JSON.parse(cached);
   } catch {}
 
-  const baseQuery = await buildFeedQuery(investorId);
+  // buildFeedQuery now also returns preferredIndustries for soft-sort below.
+  const { preferredIndustries = [], ...baseQuery } = await buildFeedQuery(investorId);
+
+  // Cursor-based pagination using a compound cursor (createdAt + _id) that
+  // matches the sort order, preventing empty pages on scroll.
   if (cursor) {
-    // BUG-04 FIX: The original code did:
-    //   baseQuery._id = { ...(baseQuery._id || {}), $lt: cursor }
-    // which flat-merges $nin and $lt into the same object.
-    // Although MongoDB supports { $nin:[...], $lt: x } on one field,
-    // this pattern silently overwrites any _id condition added later.
-    // Using $and explicitly composes the cursor bound alongside the existing
-    // $nin:seen filter without touching baseQuery._id, making the query
-    // safe to extend in the future.
-    baseQuery.$and = [...(baseQuery.$and || []), { _id: { $lt: cursor } }];
+    let cursorCreatedAt = null;
+    let cursorId = cursor;
+
+    // Compound cursor format: "<ISO-date>_<objectId>"
+    if (cursor.includes("_")) {
+      const sepIdx = cursor.indexOf("_");
+      cursorCreatedAt = new Date(cursor.slice(0, sepIdx));
+      cursorId = cursor.slice(sepIdx + 1);
+    }
+
+    if (cursorCreatedAt && !isNaN(cursorCreatedAt.getTime())) {
+      baseQuery.$and = [
+        ...(baseQuery.$and || []),
+        {
+          $or: [
+            { createdAt: { $lt: cursorCreatedAt } },
+            { createdAt: cursorCreatedAt, _id: { $lt: cursorId } },
+          ],
+        },
+      ];
+    } else {
+      baseQuery.$and = [...(baseQuery.$and || []), { _id: { $lt: cursorId } }];
+    }
   }
 
-  const videos = await Video.find(baseQuery)
-    .sort({ isBoosted: -1, createdAt: -1, _id: -1 })
-    .limit(limit + 1)
-    .populate("founderId", "name avatar companyName industry isVerified")
-    .lean();
+  // Sort: boosted first → preferred-industry match (soft preference, not a hard
+  // filter so investors always see ALL active pitches) → newest → _id tiebreak.
+  // We use aggregation so we can add a computed `prefMatch` sort field without
+  // changing the stored documents.
+  let videos;
+  if (preferredIndustries.length > 0) {
+    videos = await Video.aggregate([
+      { $match: baseQuery },
+      {
+        $addFields: {
+          prefMatch: {
+            $cond: [
+              { $in: ["$industry", preferredIndustries] },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+      { $sort: { isBoosted: -1, prefMatch: -1, createdAt: -1, _id: -1 } },
+      { $limit: limit + 1 },
+      {
+        $lookup: {
+          from: "users",
+          localField: "founderId",
+          foreignField: "_id",
+          as: "_founderArr",
+        },
+      },
+      {
+        $addFields: {
+          founderId: {
+            $mergeObjects: [
+              { $arrayElemAt: ["$_founderArr", 0] },
+            ],
+          },
+        },
+      },
+      { $unset: ["_founderArr", "prefMatch"] },
+    ]);
+
+    // Strip sensitive founder fields to match .populate() projection
+    const safeFields = ["_id", "name", "avatar", "companyName", "industry", "isVerified"];
+    videos = videos.map((v) => ({
+      ...v,
+      founderId: v.founderId
+        ? Object.fromEntries(safeFields.map((f) => [f, v.founderId[f]]))
+        : v.founderId,
+    }));
+  } else {
+    // No preferences set — simple find + sort
+    videos = await Video.find(baseQuery)
+      .sort({ isBoosted: -1, createdAt: -1, _id: -1 })
+      .limit(limit + 1)
+      .populate("founderId", "name avatar companyName industry isVerified")
+      .lean();
+  }
 
   const hasMore = videos.length > limit;
   const items = hasMore ? videos.slice(0, limit) : videos;
-  const nextCursor = hasMore ? items[items.length - 1]._id : null;
+  // Compound cursor: encode both createdAt and _id of the last item
+  const lastItem = hasMore ? items[items.length - 1] : null;
+  const nextCursor = lastItem
+    ? `${new Date(lastItem.createdAt).toISOString()}_${lastItem._id}`
+    : null;
 
   // Compute accurate comment counts for the videos in this page
   const Comment = require("../comment/comment.model");
@@ -227,14 +307,9 @@ const getFeed = async (investorId, { cursor, limit = FEED_PAGE_SIZE } = {}) => {
     });
   } catch {}
 
-  // Add isLiked / isSaved booleans + accurate counts for the requesting user
-  const uid = investorId.toString();
-  const enriched = items.map((v) => ({
+  // Enrich with isLiked/isSaved for the requesting user via central utility
+  const enriched = enrichVideos(items, investorId).map((v) => ({
     ...v,
-    isLiked: (v.likes || []).some((id) => id.toString() === uid),
-    isSaved: (v.saves || []).some((id) => id.toString() === uid),
-    likeCount: (v.likes || []).length,
-    saveCount: (v.saves || []).length,
     commentCount: commentCounts[v._id.toString()] ?? v.commentCount ?? 0,
   }));
 
@@ -248,11 +323,13 @@ const getFeed = async (investorId, { cursor, limit = FEED_PAGE_SIZE } = {}) => {
   return result;
 };
 
-const getVideoById = async (videoId) => {
-  const video = await Video.findById(videoId).populate(
-    "founderId",
-    "name avatar companyName industry isVerified bio website linkedIn",
-  );
+const getVideoById = async (videoId, userId) => {
+  const video = await Video.findById(videoId)
+    .populate(
+      "founderId",
+      "name avatar companyName industry isVerified bio website linkedIn",
+    )
+    .lean();
   if (!video) throw new ApiError(404, "Video not found");
 
   // Ensure commentCount is accurate (backfill for legacy videos)
@@ -266,10 +343,14 @@ const getVideoById = async (videoId) => {
     });
     if (video.commentCount !== realCount) {
       video.commentCount = realCount;
-      await video.save({ validateBeforeSave: false });
+      // Use findByIdAndUpdate to avoid lean() / save() conflicts
+      await Video.findByIdAndUpdate(video._id, { commentCount: realCount });
     }
   } catch {}
 
+  if (userId) {
+    return enrichVideo(video, userId);
+  }
   return video;
 };
 
@@ -292,10 +373,12 @@ const updateVideo = async (videoId, founderId, updates) => {
     { _id: videoId, founderId },
     sanitized,
     { new: true, runValidators: true },
-  );
+  )
+    .populate("founderId", "name avatar companyName isVerified")
+    .lean();
   if (!video) throw new ApiError(404, "Video not found");
   await invalidateFeedCache();
-  return video;
+  return enrichVideo(video, founderId);
 };
 
 const deleteVideo = async (videoId, founderId) => {
@@ -313,26 +396,58 @@ const likeVideo = async (videoId, investorId) => {
   const video = await Video.findById(videoId);
   if (!video) throw new ApiError(404, "Video not found");
 
-  const liked = video.likes.some(
-    (id) => id.toString() === investorId.toString(),
+  const uid = toObjectId(investorId);
+  const uidStr = investorId.toString();
+
+  const liked = (video.likes || []).some(
+    (id) => id && id.toString() === uidStr,
   );
+
+  let updatedVideo;
   if (liked) {
-    video.likes = video.likes.filter(
-      (id) => id.toString() !== investorId.toString(),
+    // Remove like atomically
+    updatedVideo = await Video.findByIdAndUpdate(
+      videoId,
+      { $pull: { likes: { $in: [uid, uidStr] } } },
+      { new: true },
     );
   } else {
-    video.likes.push(investorId);
-    video.notInterested = video.notInterested.filter(
-      (id) => id.toString() !== investorId.toString(),
+    // Add like atomically + remove from notInterested
+    updatedVideo = await Video.findByIdAndUpdate(
+      videoId,
+      {
+        $addToSet: { likes: uid },
+        $pull: { notInterested: { $in: [uid, uidStr] } },
+      },
+      { new: true },
     );
   }
-  await video.save();
 
-  // Invalidate this user's feed cache so refreshed page reflects the like
-  await invalidateUserFeedCache(investorId);
+  // Invalidate this user's feed cache AND the global feed cache so ALL users
+  // see the updated like count on their next feed refresh
+  await Promise.all([
+    invalidateUserFeedCache(investorId),
+    invalidateFeedCache(),
+  ]);
+
+  const total = (updatedVideo.likes || []).length;
+  const payload = {
+    videoId: videoId.toString(),
+    liked: !liked,
+    likeCount: total,
+    count: total,
+    totalLikes: total,
+  };
+
+  // Broadcast real-time engagement update to ALL connected clients
+  try {
+    const { getIO } = require("../../socket");
+    const io = getIO();
+    if (io) io.emit("pitch:engagement", payload);
+  } catch {}
 
   // Notify founder on new like
-  if (!liked && video.founderId.toString() !== investorId.toString()) {
+  if (!liked && video.founderId.toString() !== uidStr) {
     try {
       const notif = require("../notification/notification.service");
       const investor = await User.findById(investorId).select("name");
@@ -343,35 +458,68 @@ const likeVideo = async (videoId, investorId) => {
           body: video.title,
           data: {
             videoId: video._id.toString(),
-            investorId: investorId.toString(),
+            investorId: uidStr,
           },
         })
         .catch(() => {});
     } catch {}
   }
-  return { liked: !liked, totalLikes: video.likes.length };
+  return payload;
 };
 
 const saveVideo = async (videoId, investorId) => {
   const video = await Video.findById(videoId);
   if (!video) throw new ApiError(404, "Video not found");
-  const saved = video.saves.some(
-    (id) => id.toString() === investorId.toString(),
+
+  const uid = toObjectId(investorId);
+  const uidStr = investorId.toString();
+
+  const saved = (video.saves || []).some(
+    (id) => id && id.toString() === uidStr,
   );
+
+  let updatedVideo;
   if (saved) {
-    video.saves = video.saves.filter(
-      (id) => id.toString() !== investorId.toString(),
+    // Remove save atomically — prevents double-unsave
+    updatedVideo = await Video.findByIdAndUpdate(
+      videoId,
+      { $pull: { saves: { $in: [uid, uidStr] } } },
+      { new: true },
     );
   } else {
-    video.saves.push(investorId);
+    // Add save atomically — $addToSet prevents duplicate entries on double-click
+    updatedVideo = await Video.findByIdAndUpdate(
+      videoId,
+      { $addToSet: { saves: uid } },
+      { new: true },
+    );
   }
-  await video.save();
 
-  // Invalidate this user's feed cache so refreshed page reflects the save
-  await invalidateUserFeedCache(investorId);
+  // Invalidate this user's feed cache AND the global feed cache so ALL users
+  // see the updated save count on their next feed refresh
+  await Promise.all([
+    invalidateUserFeedCache(investorId),
+    invalidateFeedCache(),
+  ]);
+
+  const total = (updatedVideo.saves || []).length;
+  const payload = {
+    videoId: videoId.toString(),
+    saved: !saved,
+    saveCount: total,
+    count: total,
+    totalSaves: total,
+  };
+
+  // Broadcast real-time engagement update to ALL connected clients
+  try {
+    const { getIO } = require("../../socket");
+    const io = getIO();
+    if (io) io.emit("pitch:engagement", payload);
+  } catch {}
 
   // Notify founder on new save
-  if (!saved && video.founderId.toString() !== investorId.toString()) {
+  if (!saved && video.founderId.toString() !== uidStr) {
     try {
       const notif = require("../notification/notification.service");
       const investor = await User.findById(investorId).select("name");
@@ -382,24 +530,33 @@ const saveVideo = async (videoId, investorId) => {
           body: video.title,
           data: {
             videoId: video._id.toString(),
-            investorId: investorId.toString(),
+            investorId: uidStr,
           },
         })
         .catch(() => {});
     } catch {}
   }
-  return { saved: !saved, totalSaves: video.saves.length };
+  return payload;
 };
 
 const markNotInterested = async (videoId, investorId) => {
+  const uid = toObjectId(investorId);
+  const uidStr = investorId.toString();
+
   const video = await Video.findById(videoId);
   if (!video) throw new ApiError(404, "Video not found");
-  if (
-    !video.notInterested.some((id) => id.toString() === investorId.toString())
-  ) {
-    video.notInterested.push(investorId);
+
+  const interested = (video.notInterested || []).some(
+    (id) => id && id.toString() === uidStr,
+  );
+
+  if (!interested) {
+    await Video.findByIdAndUpdate(
+      videoId,
+      { $addToSet: { notInterested: uid } },
+      { new: true },
+    );
   }
-  await video.save();
   return { notInterested: true };
 };
 
@@ -446,7 +603,10 @@ const logView = async (videoId, investorId, watchedSeconds = 0) => {
 };
 
 const getMyPitches = async (founderId) => {
-  const videos = await Video.find({ founderId }).sort({ createdAt: -1 }).lean();
+  const videos = await Video.find({ founderId })
+    .sort({ createdAt: -1 })
+    .populate("founderId", "name avatar companyName isVerified")
+    .lean();
   return enrichWithCommentCounts(videos, founderId);
 };
 
@@ -461,15 +621,14 @@ const getUserPitches = async (founderIdOrUsername, viewerId) => {
     visibility: { $ne: "investors-only" },
   })
     .sort({ createdAt: -1 })
+    .populate("founderId", "name avatar companyName isVerified")
     .lean();
   return enrichWithCommentCounts(videos, viewerId || founderId);
 };
 
 const getSavedPitches = async (investorId) => {
   // Explicitly cast to ObjectId so Mongoose array queries always match
-  const uid = mongoose.Types.ObjectId.isValid(investorId)
-    ? new mongoose.Types.ObjectId(investorId)
-    : investorId;
+  const uid = toObjectId(investorId);
 
   const videos = await Video.find({
     saves: uid,
@@ -495,7 +654,6 @@ const enrichWithCommentCounts = async (videos, userId) => {
       {
         $match: {
           videoId: { $in: videoIds },
-          parentId: null,
           isDeleted: false,
           isHidden: false,
         },
@@ -507,13 +665,8 @@ const enrichWithCommentCounts = async (videos, userId) => {
     });
   } catch {}
 
-  const uid = userId?.toString();
-  return videos.map((v) => ({
+  return enrichVideos(videos, userId).map((v) => ({
     ...v,
-    isLiked: uid ? (v.likes || []).some((id) => id.toString() === uid) : false,
-    isSaved: uid ? (v.saves || []).some((id) => id.toString() === uid) : false,
-    likeCount: (v.likes || []).length,
-    saveCount: (v.saves || []).length,
     commentCount: commentCounts[v._id.toString()] ?? v.commentCount ?? 0,
   }));
 };
@@ -542,6 +695,18 @@ const getAnalytics = async (videoId, founderId) => {
             100,
         );
 
+  // Fetch actual comment count so analytics matches feed
+  let commentCount = 0;
+  try {
+    const Comment = require("../comment/comment.model");
+    commentCount = await Comment.countDocuments({
+      videoId: video._id,
+      parentId: null,
+      isDeleted: false,
+      isHidden: false,
+    });
+  } catch {}
+
   return {
     videoId: video._id,
     title: video.title,
@@ -550,6 +715,9 @@ const getAnalytics = async (videoId, founderId) => {
     uniqueViewers,
     totalLikes,
     totalSaves,
+    likeCount: totalLikes,
+    saveCount: totalSaves,
+    commentCount,
     avgWatchTime,
     completionRate,
     notInterestedCount: video.notInterested.length,
@@ -566,11 +734,15 @@ const renewPitch = async (videoId, founderId) => {
   if (video.status === "expired") video.status = "active";
   await video.save();
   await invalidateFeedCache();
-  return video;
+  // Return enriched lean object so founder sees consistent engagement state
+  const lean = await Video.findById(video._id)
+    .populate("founderId", "name avatar companyName isVerified")
+    .lean();
+  return enrichVideo(lean, founderId);
 };
 
 // Trending — most liked + saved + viewed pitches
-const getTrending = async ({ limit = 10 } = {}) => {
+const getTrending = async ({ limit = 10, userId } = {}) => {
   limit = Math.min(Number(limit) || 10, 30);
   const videos = await Video.aggregate([
     {
@@ -635,7 +807,9 @@ const getTrending = async ({ limit = 10 } = {}) => {
       },
     },
   ]);
-  return videos;
+
+  // Enrich with isLiked/isSaved for the requesting user via central utility
+  return enrichVideos(videos, userId);
 };
 
 // Search videos directly
@@ -648,6 +822,7 @@ const searchVideos = async ({
   sort,
   limit = 20,
   cursor,
+  userId,
 }) => {
   limit = Math.min(Number(limit) || 20, 50);
   const filter = {
@@ -687,10 +862,16 @@ const searchVideos = async ({
     .limit(limit + 1)
     .populate("founderId", "name avatar companyName isVerified")
     .lean();
+
   const hasMore = videos.length > limit;
+  const page = hasMore ? videos.slice(0, limit) : videos;
+
+  // Enrich with isLiked/isSaved for the requesting user via central utility
+  const enriched = enrichVideos(page, userId);
+
   return {
-    videos: hasMore ? videos.slice(0, limit) : videos,
-    nextCursor: hasMore ? videos[limit - 1]._id : null,
+    videos: enriched,
+    nextCursor: hasMore ? page[page.length - 1]._id : null,
     hasMore,
   };
 };
@@ -702,7 +883,11 @@ const togglePause = async (videoId, founderId) => {
   else if (video.status === "paused") video.status = "active";
   await video.save();
   await invalidateFeedCache();
-  return video;
+  // Return enriched lean object so founder sees consistent engagement state
+  const lean = await Video.findById(video._id)
+    .populate("founderId", "name avatar companyName isVerified")
+    .lean();
+  return enrichVideo(lean, founderId);
 };
 
 module.exports = {
