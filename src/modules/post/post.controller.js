@@ -22,7 +22,7 @@ const myPosts = asyncHandler(async (req, res) => {
 });
 
 const getOne = asyncHandler(async (req, res) => {
-  const post = await postService.getPostById(req.params.id);
+  const post = await postService.getPostById(req.params.id, req.user._id);
   res.json(new ApiResponse(200, { post }, "Post fetched"));
 });
 
@@ -59,6 +59,7 @@ const userPosts = asyncHandler(async (req, res) => {
   const posts = await postService.getUserPosts(req.params.userId, {
     cursor: req.query.cursor,
     limit: req.query.limit,
+    viewerId: req.user._id,
   });
   res.json(new ApiResponse(200, { posts }, "User posts"));
 });
