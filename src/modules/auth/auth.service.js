@@ -255,16 +255,17 @@ const sendPreRegisterOtp = async (email) => {
     console.log(`\n📧 PRE-REGISTER OTP for ${email}: ${otp}\n`);
   }
 
-  await sendEmail({
+  sendEmail({
     to: email,
     subject: "Your EXPGLO FUND verification code",
     html: otpEmailHtml(otp),
     text: `Your verification code: ${otp} (valid 10 min)`,
+  }).catch((err) => {
+    console.error("Failed to send pre-register email:", err);
   });
 
   return {
     sent: true,
-    ...(process.env.NODE_ENV !== "production" ? { devOtp: otp } : {}),
   };
 };
 
@@ -314,16 +315,17 @@ const sendEmailOtp = async (userId) => {
     console.log(`\n📧 EMAIL OTP for ${user.email}: ${otp}\n`);
   }
 
-  await sendEmail({
+  sendEmail({
     to: user.email,
     subject: "Your PitchConnect verification code",
     html: otpEmailHtml(otp),
     text: `Your verification code: ${otp} (valid 10 min)`,
+  }).catch((err) => {
+    console.error("Failed to send email OTP:", err);
   });
 
   return {
     sent: true,
-    ...(process.env.NODE_ENV !== "production" ? { devOtp: otp } : {}),
   };
 };
 
@@ -372,9 +374,23 @@ const sendPhoneOtp = async (userId, phone) => {
   const otp = generateOtp();
   user.phone = phone;
   user.phoneOtpHash = await hashOtp(otp);
-  user.phoneOtpExpires = new Date(Date.now() + OTP_EXPIRY_MS);
+
+  const isDummyOtp =
+    process.env.NODE_ENV !== "production" &&
+    process.env.ENABLE_DUMMY_OTP === "true";
+
+  const expiryMs = isDummyOtp ? 5 * 60 * 1000 : OTP_EXPIRY_MS;
+  user.phoneOtpExpires = new Date(Date.now() + expiryMs);
   user.isPhoneVerified = false;
   await user.save({ validateBeforeSave: false });
+
+  if (isDummyOtp) {
+    console.log(`\n📱 [DUMMY] PHONE OTP for ${phone}: ${otp}\n`);
+    return {
+      sent: true,
+      devOtp: otp,
+    };
+  }
 
   if (process.env.NODE_ENV !== "production") {
     console.log(`\n📱 PHONE OTP for ${phone}: ${otp}\n`);
@@ -383,7 +399,6 @@ const sendPhoneOtp = async (userId, phone) => {
   await sendSms({ phone, otp });
   return {
     sent: true,
-    ...(process.env.NODE_ENV !== "production" ? { devOtp: otp } : {}),
   };
 };
 
@@ -434,11 +449,13 @@ const forgotPassword = async (email) => {
     process.env.FRONTEND_URL || "http://localhost:5173"
   }/reset-password?token=${rawToken}&email=${encodeURIComponent(email)}`;
 
-  await sendEmail({
+  sendEmail({
     to: email,
     subject: "Reset your PitchConnect password",
     html: `<p>Click the link below to reset your password (valid 30 min):</p><p><a href="${resetUrl}">${resetUrl}</a></p>`,
     text: `Reset link: ${resetUrl}`,
+  }).catch((err) => {
+    console.error("Failed to send password reset email:", err);
   });
   return { sent: true };
 };
