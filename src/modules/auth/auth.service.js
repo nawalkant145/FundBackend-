@@ -153,7 +153,7 @@ const checkAvailability = async ({ username, email, phone }) => {
   return result;
 };
 
-const loginUser = async ({ identifier, email, password }) => {
+const loginUser = async ({ identifier, email, password, role }) => {
   const raw = (identifier || email || "").trim();
   let query;
   if (raw.includes("@")) {
@@ -194,6 +194,24 @@ const loginUser = async ({ identifier, email, password }) => {
     }
     await user.save({ validateBeforeSave: false });
     throw new ApiError(401, "Invalid credentials");
+  }
+
+  if (role) {
+    const targetRole = String(role).toLowerCase().trim();
+    if (["founder", "investor", "admin"].includes(targetRole)) {
+      if (user.role !== targetRole) {
+        const requiredRoleName =
+          targetRole === "founder"
+            ? "Founder"
+            : targetRole === "investor"
+            ? "Investor"
+            : "Admin";
+        throw new ApiError(
+          401,
+          `Invalid credentials for ${requiredRoleName} login`,
+        );
+      }
+    }
   }
 
   user.loginAttempts = 0;

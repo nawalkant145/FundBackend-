@@ -136,8 +136,8 @@ const verifyPreRegisterOtp = asyncHandler(async (req, res) => {
 
 const login = asyncHandler(async (req, res) => {
   validateLogin(req.body);
-  const { identifier, email, password } = req.body;
-  const result = await authService.loginUser({ identifier, email, password });
+  const { identifier, email, password, role } = req.body;
+  const result = await authService.loginUser({ identifier, email, password, role });
 
   // Track login IP + device
   try {
