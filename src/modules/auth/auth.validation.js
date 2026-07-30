@@ -123,7 +123,7 @@ const validateRegister = (data) => {
 
 const validateLogin = (data) => {
   const errors = [];
-  const { identifier, email, password } = data;
+  const { identifier, email, password, role } = data;
 
   // Trim before the falsy check so a whitespace-only string is rejected
   if (!identifier?.trim() && !email?.trim()) {
@@ -132,6 +132,10 @@ const validateLogin = (data) => {
 
   if (!password || !password.trim()) {
     errors.push("Password is required");
+  }
+
+  if (role && typeof role === "string" && !["founder", "investor", "admin"].includes(role.toLowerCase().trim())) {
+    errors.push("Invalid role specified");
   }
 
   if (errors.length) throw new ApiError(400, "Validation failed", errors);
