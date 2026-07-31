@@ -30,5 +30,6 @@ router.use(
 router.use("/report", require("../modules/report/report.routes"));
 router.use("/activity", require("../modules/activity/activity.routes"));
 router.use("/admin", require("../modules/admin/admin.routes"));
+router.use("/course", require("../modules/course/course.routes"));
 
 module.exports = router;
