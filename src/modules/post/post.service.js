@@ -33,6 +33,11 @@ const createPost = async (userId, files, body) => {
 
   const { caption, link, hashtags, type } = body;
 
+  // Thoughts (text-only) posts must not carry any images
+  if (type === "text" && files?.length > 0) {
+    throw new ApiError(400, "Text posts cannot include images");
+  }
+
   // Upload images to Cloudinary
   let imageUrls = [];
   if (files?.length > 0) {

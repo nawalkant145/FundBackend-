@@ -7,13 +7,16 @@ const { uploadImage } = require("../../middlewares/upload.middleware");
 
 router.use(authenticate);
 
-// Create post (founder only, up to 10 images)
+// Create post with images (founder only, up to 10 images)
 router.post(
   "/",
   authorize("founder"),
   uploadImage.array("images", 10),
   c.create,
 );
+
+// Create text-only (thoughts) post — no image upload allowed
+router.post("/thoughts", authorize("founder"), c.createThoughts);
 
 // Feed (all authenticated users)
 router.get("/feed", c.feed);
