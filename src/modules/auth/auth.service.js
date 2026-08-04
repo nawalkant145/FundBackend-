@@ -158,8 +158,10 @@ const loginUser = async ({ identifier, email, password, role }) => {
   let query;
   if (raw.includes("@")) {
     query = { email: raw.toLowerCase() };
-  } else if (/^\+?\d[\d\s-]{5,}$/.test(raw)) {
-    query = { phone: raw };
+  } else if (/^\+?\d[\d\s\-()\u00A0]{5,}$/.test(raw)) {
+    // Normalize before querying: strip spaces, dashes, parentheses
+    const normalizedPhone = raw.replace(/[\s\-()\u00A0]/g, "");
+    query = { phone: normalizedPhone };
   } else {
     query = { username: raw.toLowerCase() };
   }

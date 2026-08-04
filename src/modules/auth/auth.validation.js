@@ -4,22 +4,92 @@ const ApiError = require("../../utils/ApiError");
 // ─── Shared helpers ────────────────────────────────────────────────────────
 
 /**
- * Validates a mobile number.
- * Ensures the base phone number has exactly 10 digits (excluding country code).
- * Supports an optional country code starting with '+' (1-3 digits) followed by exactly 10 digits.
+ * Country-aware phone number rules.
+ * Keys are the full country calling code (with leading '+').
+ * Values specify the allowed subscriber (national) digit count range.
+ * Codes are matched longest-first so +971 is tried before +97 before +9.
+ *
+ * Sources: ITU-T E.164 national numbering plans.
+ */
+const PHONE_RULES = {
+  // 4-digit codes first (none currently, placeholder for future)
+  // 3-digit codes
+  "+971": { min: 9,  max: 9  }, // UAE
+  "+852": { min: 8,  max: 8  }, // Hong Kong
+  "+853": { min: 8,  max: 8  }, // Macau
+  "+880": { min: 10, max: 10 }, // Bangladesh
+  "+966": { min: 9,  max: 9  }, // Saudi Arabia
+  "+974": { min: 8,  max: 8  }, // Qatar
+  "+973": { min: 8,  max: 8  }, // Bahrain
+  "+968": { min: 8,  max: 8  }, // Oman
+  "+965": { min: 8,  max: 8  }, // Kuwait
+  // 2-digit codes
+  "+91": { min: 10, max: 10 }, // India
+  "+44": { min: 10, max: 10 }, // UK
+  "+61": { min: 9,  max: 9  }, // Australia
+  "+65": { min: 8,  max: 8  }, // Singapore
+  "+86": { min: 11, max: 11 }, // China
+  "+49": { min: 10, max: 11 }, // Germany
+  "+33": { min: 9,  max: 9  }, // France
+  "+81": { min: 10, max: 11 }, // Japan
+  "+82": { min: 9,  max: 10 }, // South Korea
+  "+60": { min: 9,  max: 10 }, // Malaysia
+  "+63": { min: 10, max: 10 }, // Philippines
+  "+62": { min: 9,  max: 12 }, // Indonesia
+  "+55": { min: 10, max: 11 }, // Brazil
+  "+27": { min: 9,  max: 9  }, // South Africa
+  "+92": { min: 10, max: 10 }, // Pakistan
+  "+94": { min: 9,  max: 9  }, // Sri Lanka
+  "+20": { min: 10, max: 10 }, // Egypt
+  "+98": { min: 10, max: 10 }, // Iran
+  // 1-digit codes
+  "+1": { min: 10, max: 10 }, // US/Canada
+};
+
+/**
+ * Validates a mobile number in international format (+countryCode + subscriber).
+ *
+ * Rules:
+ *  - International format (leading '+') is REQUIRED.
+ *  - Strips whitespace, dashes, and parentheses before parsing.
+ *  - Validates subscriber digit count against per-country rules.
+ *  - Unknown country codes are accepted with a permissive 7–12 digit fallback
+ *    so unlisted countries are not permanently blocked.
+ *  - Returns false for local-only numbers (no '+') — callers should prompt
+ *    the user to use the full international format.
  */
 const isValidPhone = (phone) => {
   if (!phone || typeof phone !== "string") return false;
-  const cleaned = phone.replace(/[\s\-()]/g, "");
-  
-  if (cleaned.startsWith("+")) {
-    const digitsOnly = cleaned.slice(1);
-    // 1-3 digits country code followed by exactly 10 digits starting with non-zero
-    return /^\d{1,3}[1-9]\d{9}$/.test(digitsOnly);
+
+  // Strip common formatting characters
+  const cleaned = phone.replace(/[\s\-()\u00A0]/g, "");
+
+  if (!cleaned.startsWith("+")) {
+    // Local numbers are not accepted; international format is required.
+    return false;
   }
-  
-  // Local number must be exactly 10 digits starting with non-zero
-  return /^[1-9]\d{9}$/.test(cleaned);
+
+  // Try to match the longest known country code first (4 → 3 → 2 → 1 digit)
+  const digits = cleaned.slice(1); // everything after '+'
+  const lengths = [4, 3, 2, 1];
+
+  for (const len of lengths) {
+    const code = "+" + digits.slice(0, len);
+    if (PHONE_RULES[code]) {
+      const subscriber = digits.slice(len);
+      const { min, max } = PHONE_RULES[code];
+      // Subscriber must be purely numeric, correct length, and non-empty
+      if (!/^\d+$/.test(subscriber)) return false;
+      return subscriber.length >= min && subscriber.length <= max;
+    }
+  }
+
+  // Unknown country code — apply a permissive fallback (7–12 subscriber digits)
+  // so users from unlisted countries are not blocked.
+  const allDigits = digits;
+  if (!/^\d+$/.test(allDigits)) return false;
+  // At minimum we need 1 country-code digit + 7 subscriber digits
+  return allDigits.length >= 8 && allDigits.length <= 15;
 };
 
 /**
@@ -107,13 +177,16 @@ const validateRegister = (data) => {
     errors.push("Role must be founder or investor");
   }
 
-  // Phone — optional at registration but must be valid if provided
-  if (phone !== undefined && phone !== null && phone !== "") {
-    if (!isValidPhone(String(phone))) {
-      errors.push(
-        "Phone number must be in international format (e.g. +91XXXXXXXXXX)",
-      );
-    }
+  // Phone — required at registration; must be in international format
+  if (!phone || phone === "") {
+    errors.push("Phone number is required");
+  } else if (!isValidPhone(String(phone))) {
+    errors.push(
+      "Phone number must include your country code in international format " +
+      "(e.g. +919876543210 for India, +17025551234 for US, +971501234567 for UAE, " +
+      "+6591234567 for Singapore). The number of digits after the country code " +
+      "must match your country's standard.",
+    );
   }
 
   if (errors.length) throw new ApiError(400, "Validation failed", errors);
@@ -192,7 +265,9 @@ const validateSendPhoneOtp = (data) => {
 
   if (!phone || !isValidPhone(String(phone))) {
     errors.push(
-      "Valid phone number is required in international format (e.g. +91XXXXXXXXXX)",
+      "A valid phone number in international format is required " +
+      "(e.g. +919876543210 for India, +17025551234 for US, +971501234567 for UAE, " +
+      "+6591234567 for Singapore).",
     );
   }
 

@@ -73,6 +73,28 @@ const updateProfile = async (userId, updates) => {
   const sanitized = {};
   for (const k of SAFE_FIELDS)
     if (updates[k] !== undefined) sanitized[k] = updates[k];
+
+  // If the phone number is being changed, strip formatting and reset
+  // isPhoneVerified so the new number is required to go through OTP.
+  if (sanitized.phone !== undefined) {
+    const currentUser = await User.findById(userId).select("phone isPhoneVerified verificationLevel");
+    if (!currentUser) throw new ApiError(404, "User not found");
+
+    // Normalize both sides before comparison
+    const normalizedNew = String(sanitized.phone).replace(/[\s\-()\u00A0]/g, "");
+    const normalizedOld = String(currentUser.phone || "").replace(/[\s\-()\u00A0]/g, "");
+    sanitized.phone = normalizedNew;
+
+    if (normalizedNew !== normalizedOld) {
+      // Phone changed — require re-verification
+      sanitized.isPhoneVerified = false;
+      // Drop verificationLevel to 1 (email-only) if it was higher
+      if ((currentUser.verificationLevel || 0) > 1) {
+        sanitized.verificationLevel = 1;
+      }
+    }
+  }
+
   const user = await User.findByIdAndUpdate(userId, sanitized, {
     new: true,
     runValidators: true,
