@@ -18,37 +18,65 @@ const init = () => {
 };
 
 const sendEmail = async ({ to, subject, html, text }) => {
-  const from = `EXPGLO FUND <${process.env.GMAIL_USER || "noreply@expglofund.com"}>`;
+  const gUser = process.env.GMAIL_USER || "expglobusiness@gmail.com";
+  const from = `EXPGLO FUND <${gUser}>`;
   const transport = init();
 
   if (!transport) {
-    console.log("📧 [DEV] Email skipped — no GMAIL credentials");
+    console.log("📧 [DEV] Email skipped — no GMAIL credentials set in .env");
     console.log(`    To: ${to} | Subject: ${subject}`);
     if (text) console.log(`    Text: ${text}`);
-    return { id: "dev-mock" };
+    return { id: "dev-mock", skipped: true };
   }
 
   try {
-    const info = await transport.sendMail({ from, to, subject, html, text });
+    const info = await transport.sendMail({
+      from,
+      to,
+      replyTo: gUser,
+      subject,
+      html,
+      text,
+      headers: {
+        "X-Auto-Response-Suppress": "OOF, AutoReply",
+        "Auto-Submitted": "auto-generated",
+        "X-Report-Abuse-To": gUser,
+      },
+    });
     console.log(`📧 Email sent to ${to} — messageId: ${info.messageId}`);
-    return { id: info.messageId };
+    return { id: info.messageId, success: true };
   } catch (err) {
-    console.warn("⚠️  Gmail SMTP error:", err.message);
-    return { id: null, error: err.message };
+    console.error("⚠️  Gmail SMTP error:", err.message);
+    throw new Error(`Failed to send email: ${err.message}`);
   }
 };
 
 const otpEmailHtml = (otp) => `
-  <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #eee;border-radius:8px">
-    <h2 style="color:#0F4A2E">Your EXPGLO FUND verification code</h2>
-    <p>Use the code below to verify your email. This code expires in 10 minutes.</p>
-    <div style="font-size:32px;font-weight:bold;letter-spacing:8px;background:#f4f4f4;padding:16px;text-align:center;border-radius:6px;margin:16px 0;color:#0F4A2E">
-      ${otp}
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  </head>
+  <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background-color:#f9fafb;margin:0;padding:24px;color:#111827">
+    <div style="max-width:480px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:32px;box-shadow:0 1px 3px rgba(0,0,0,0.05)">
+      <div style="text-align:center;margin-bottom:24px">
+        <h1 style="color:#0F4A2E;font-size:22px;font-weight:700;margin:0 0 8px 0">EXPGLO FUND</h1>
+        <p style="color:#4b5563;font-size:14px;margin:0">Verification Code</p>
+      </div>
+      <p style="font-size:15px;line-height:24px;color:#374151;margin-bottom:20px">Hello,</p>
+      <p style="font-size:15px;line-height:24px;color:#374151;margin-bottom:24px">Please use the following 6-digit verification code to complete your request. This code will expire in <strong>10 minutes</strong>.</p>
+      
+      <div style="background-color:#f3f4f6;border-radius:8px;padding:20px;text-align:center;margin-bottom:24px">
+        <span style="font-family:monospace;font-size:36px;font-weight:800;letter-spacing:10px;color:#0F4A2E;display:inline-block">${otp}</span>
+      </div>
+
+      <p style="font-size:13px;line-height:20px;color:#6b7280;margin-bottom:24px">If you did not request this code, please ignore this email or contact support if you have concerns.</p>
+      <hr style="border:none;border-top:1px solid #f3f4f6;margin:24px 0" />
+      <p style="font-size:12px;color:#9ca3af;text-align:center;margin:0">© EXPGLO FUND. All rights reserved.</p>
     </div>
-    <p style="color:#666;font-size:13px">If you didn't request this, you can ignore the email.</p>
-    <hr style="border:none;border-top:1px solid #eee;margin:16px 0" />
-    <p style="color:#999;font-size:11px;text-align:center">EXPGLO FUND — Fundraising in 60 seconds</p>
-  </div>
+  </body>
+  </html>
 `;
 
 module.exports = { sendEmail, otpEmailHtml };

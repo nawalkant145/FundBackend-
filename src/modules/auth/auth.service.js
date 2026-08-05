@@ -275,14 +275,17 @@ const sendPreRegisterOtp = async (email) => {
     console.log(`\n📧 PRE-REGISTER OTP for ${email}: ${otp}\n`);
   }
 
-  sendEmail({
-    to: email,
-    subject: "Your EXPGLO FUND verification code",
-    html: otpEmailHtml(otp),
-    text: `Your verification code: ${otp} (valid 10 min)`,
-  }).catch((err) => {
+  try {
+    await sendEmail({
+      to: email,
+      subject: "Your EXPGLO FUND verification code",
+      html: otpEmailHtml(otp),
+      text: `Your verification code: ${otp} (valid 10 min)`,
+    });
+  } catch (err) {
     console.error("Failed to send pre-register email:", err);
-  });
+    throw new ApiError(500, "Failed to send verification email. Please check your email address or try again later.");
+  }
 
   return {
     sent: true,
@@ -335,14 +338,17 @@ const sendEmailOtp = async (userId) => {
     console.log(`\n📧 EMAIL OTP for ${user.email}: ${otp}\n`);
   }
 
-  sendEmail({
-    to: user.email,
-    subject: "Your PitchConnect verification code",
-    html: otpEmailHtml(otp),
-    text: `Your verification code: ${otp} (valid 10 min)`,
-  }).catch((err) => {
+  try {
+    await sendEmail({
+      to: user.email,
+      subject: "Your EXPGLO FUND verification code",
+      html: otpEmailHtml(otp),
+      text: `Your verification code: ${otp} (valid 10 min)`,
+    });
+  } catch (err) {
     console.error("Failed to send email OTP:", err);
-  });
+    throw new ApiError(500, "Failed to send OTP email. Please try again later.");
+  }
 
   return {
     sent: true,
@@ -469,14 +475,17 @@ const forgotPassword = async (email) => {
     process.env.FRONTEND_URL || "http://localhost:5173"
   }/reset-password?token=${rawToken}&email=${encodeURIComponent(email)}`;
 
-  sendEmail({
-    to: email,
-    subject: "Reset your PitchConnect password",
-    html: `<p>Click the link below to reset your password (valid 30 min):</p><p><a href="${resetUrl}">${resetUrl}</a></p>`,
-    text: `Reset link: ${resetUrl}`,
-  }).catch((err) => {
+  try {
+    await sendEmail({
+      to: email,
+      subject: "Reset your EXPGLO FUND password",
+      html: `<p>Click the link below to reset your password (valid 30 min):</p><p><a href="${resetUrl}">${resetUrl}</a></p>`,
+      text: `Reset link: ${resetUrl}`,
+    });
+  } catch (err) {
     console.error("Failed to send password reset email:", err);
-  });
+    // Don't leak details, return sent true or throw ApiError
+  }
   return { sent: true };
 };
 
