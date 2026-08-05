@@ -7,6 +7,34 @@ const auditService = require("../modules/audit/audit.service");
 class KycEventEmitter extends EventEmitter {}
 const kycEvents = new KycEventEmitter();
 
+// Level 2 Personal Identity Submitted
+kycEvents.on("kyc:submitted", async ({ userId, kycId, referenceId }) => {
+  try {
+    await notificationService.send(userId, {
+      type: "verification",
+      title: "KYC Submission Received 📄",
+      body: `Your identity verification request has been received. Reference ID: ${referenceId || "KYC-REQ"}. Estimated review within 24 hours.`,
+      data: { level: 2, status: "under_review", referenceId },
+    });
+  } catch (err) {
+    console.error("Error in kyc:submitted handler:", err);
+  }
+});
+
+// Level 2 Personal Identity Resubmitted
+kycEvents.on("kyc:resubmitted", async ({ userId, kycId, referenceId }) => {
+  try {
+    await notificationService.send(userId, {
+      type: "verification",
+      title: "KYC Resubmission Under Review ⏳",
+      body: `Your updated documents for Reference ID: ${referenceId || "KYC-REQ"} are under review by our compliance team.`,
+      data: { level: 2, status: "under_review", referenceId },
+    });
+  } catch (err) {
+    console.error("Error in kyc:resubmitted handler:", err);
+  }
+});
+
 // Level 2 Personal Identity Approved
 kycEvents.on("kyc:approved", async ({ userId, adminId }) => {
   try {

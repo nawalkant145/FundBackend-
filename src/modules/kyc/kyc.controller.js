@@ -22,9 +22,21 @@ const submitInvestmentKyc = asyncHandler(async (req, res) => {
   res.status(201).json(new ApiResponse(201, investorKyc, "Investment transaction KYC submitted for review"));
 });
 
+const resubmitPersonalKyc = asyncHandler(async (req, res) => {
+  const kyc = await kycService.resubmitPersonalKyc(req.user._id, req.body);
+  res.status(200).json(new ApiResponse(200, kyc, "Personal KYC resubmitted for review"));
+});
+
+const getKycDetails = asyncHandler(async (req, res) => {
+  const kyc = await kycService.getKycById(req.params.id);
+  res.json(new ApiResponse(200, kyc, "KYC details fetched"));
+});
+
 module.exports = {
   getVerificationStatus,
   submitPersonalKyc,
+  resubmitPersonalKyc,
+  getKycDetails,
   submitCompanyKyc,
   submitInvestmentKyc,
 };

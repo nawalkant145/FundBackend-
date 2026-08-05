@@ -41,7 +41,7 @@ const getVerificationStatus = async (userId) => {
       },
       identityVerified: {
         level: 2,
-        status: user.kycStatus || user.documents?.status || "none",
+        status: kycDoc?.verificationStatus || user.kycStatus || user.documents?.status || "none",
         verified: user.verificationLevel >= 2,
         rejectionReason: kycDoc?.rejectionReason || user.documents?.rejectionReason || "",
         badge: user.verifiedBadge,
@@ -69,6 +69,13 @@ const getVerificationStatus = async (userId) => {
   };
 };
 
+const generateReferenceId = () => {
+  const d = new Date();
+  const dateStr = d.toISOString().slice(0, 10).replace(/-/g, "");
+  const rand = crypto.randomBytes(3).toString("hex").toUpperCase();
+  return `KYC-${dateStr}-${rand}`;
+};
+
 // Phase 2 Personal Identity Submission
 const submitPersonalKyc = async (userId, { documentType, documentNumber, documentFront, documentBack, selfie }) => {
   const user = await User.findById(userId);
@@ -86,7 +93,6 @@ const submitPersonalKyc = async (userId, { documentType, documentNumber, documen
   if (docHash) {
     const existing = await KYC.findOne({ documentNumberHash: docHash, userId: { $ne: userId } });
     if (existing) {
-      // Flag risk trigger on duplicate document
       await RiskAssessment.create({
         userId,
         riskScore: 75,
@@ -99,26 +105,103 @@ const submitPersonalKyc = async (userId, { documentType, documentNumber, documen
     }
   }
 
+  const referenceId = generateReferenceId();
+
   const kyc = await KYC.create({
     userId,
+    referenceId,
     documentType,
     documentNumber: documentNumber ? documentNumber.trim() : "",
     documentNumberHash: docHash,
     documentFront,
     documentBack: documentBack || "",
     selfie,
-    verificationStatus: "pending",
+    verificationStatus: "under_review",
+    history: [
+      {
+        action: "submitted",
+        performedBy: userId,
+        notes: "Initial document submission received",
+        timestamp: new Date(),
+      },
+    ],
   });
 
-  user.kycStatus = "pending";
+  user.kycStatus = "under_review";
   user.documents = {
+    referenceId,
     panCard: documentFront,
     aadhar: documentBack || "",
-    status: "pending",
+    status: "under_review",
     submittedAt: new Date(),
   };
   await user.save({ validateBeforeSave: false });
 
+  kycEvents.emit("kyc:submitted", { userId, kycId: kyc._id, referenceId });
+
+  return kyc;
+};
+
+// Resubmit Personal Identity Docs
+const resubmitPersonalKyc = async (userId, { documentType, documentNumber, documentFront, documentBack, selfie }) => {
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "User not found");
+
+  if (!documentType || !documentFront || !selfie) {
+    throw new ApiError(400, "documentType, documentFront, and selfie are required");
+  }
+
+  const prevKyc = await KYC.findOne({ userId }).sort({ createdAt: -1 });
+  const attemptsCount = (prevKyc?.attemptsCount || 1) + 1;
+
+  const docHash = documentNumber
+    ? crypto.createHash("sha256").update(documentNumber.trim().toUpperCase()).digest("hex")
+    : "";
+
+  const referenceId = prevKyc?.referenceId || generateReferenceId();
+
+  const kyc = await KYC.create({
+    userId,
+    referenceId,
+    documentType,
+    documentNumber: documentNumber ? documentNumber.trim() : "",
+    documentNumberHash: docHash,
+    documentFront,
+    documentBack: documentBack || "",
+    selfie,
+    verificationStatus: "under_review",
+    attemptsCount,
+    history: [
+      ...(prevKyc?.history || []),
+      {
+        action: "resubmitted",
+        performedBy: userId,
+        notes: `Resubmission attempt #${attemptsCount}`,
+        timestamp: new Date(),
+      },
+    ],
+  });
+
+  user.kycStatus = "under_review";
+  user.documents = {
+    referenceId,
+    panCard: documentFront,
+    aadhar: documentBack || "",
+    status: "under_review",
+    rejectionReason: "",
+    submittedAt: new Date(),
+  };
+  await user.save({ validateBeforeSave: false });
+
+  kycEvents.emit("kyc:resubmitted", { userId, kycId: kyc._id, referenceId });
+
+  return kyc;
+};
+
+// Fetch KYC Submission Details by ID
+const getKycById = async (id) => {
+  const kyc = await KYC.findById(id).populate("userId", "name email role phone avatar companyName verificationLevel").populate("history.performedBy", "name email role");
+  if (!kyc) throw new ApiError(404, "KYC Submission record not found");
   return kyc;
 };
 
@@ -187,6 +270,8 @@ const submitInvestmentKyc = async (userId, { addressProof, bankAccount, incomePr
 module.exports = {
   getVerificationStatus,
   submitPersonalKyc,
+  resubmitPersonalKyc,
+  getKycById,
   submitCompanyKyc,
   submitInvestmentKyc,
 };

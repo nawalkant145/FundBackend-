@@ -50,7 +50,7 @@ const dashboard = async () => {
     Video.countDocuments({ status: "processing" }),
     Video.countDocuments({ status: "expired" }),
     Video.countDocuments({ status: "rejected" }),
-    User.countDocuments({ "documents.status": "pending" }),
+    KYC.countDocuments({ verificationStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] } }),
     Report.countDocuments({ status: "pending" }),
     Video.countDocuments({ status: "processing" }),
     Investment.countDocuments(),
@@ -658,9 +658,9 @@ const getOperationalKpis = async () => {
     level3Count,
     level4Count,
   ] = await Promise.all([
-    User.countDocuments({ $or: [{ kycStatus: "pending" }, { "documents.status": "pending" }] }),
-    Company.countDocuments({ verificationStatus: "pending" }),
-    InvestmentKYC.countDocuments({ verificationStatus: "pending" }),
+    KYC.countDocuments({ verificationStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] } }),
+    Company.countDocuments({ verificationStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] } }),
+    InvestmentKYC.countDocuments({ verificationStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] } }),
     User.countDocuments({
       $or: [
         { kycStatus: "rejected", updatedAt: { $gte: startOfDay } },
@@ -684,6 +684,11 @@ const getOperationalKpis = async () => {
       avgApprovalTimeMinutes: 14.5,
       riskAlertsCount: riskAlerts,
       totalVerifiedUsers: totalVerified,
+      queues: {
+        level2: pendingPersonal,
+        level3: pendingFounder,
+        level4: pendingInvestor,
+      },
       levelDistribution: {
         level1: level1Count,
         level2: level2Count,
@@ -713,41 +718,145 @@ const getPendingQueues = async (queueType = "personal") => {
       .sort({ updatedAt: -1 });
   }
 
-  // Default: Personal KYC Queue
-  const userQueue = await User.find({
-    $or: [{ kycStatus: "pending" }, { "documents.status": "pending" }],
+  // Personal KYC Queue
+  const pendingKycDocs = await KYC.find({
+    verificationStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] },
+  })
+    .populate("userId", "name email role phone avatar kycStatus documents verificationLevel companyName")
+    .populate("history.performedBy", "name email role")
+    .sort({ createdAt: 1 });
+
+  if (pendingKycDocs.length > 0) {
+    return pendingKycDocs;
+  }
+
+  return User.find({
+    $or: [
+      { kycStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] } },
+      { "documents.status": { $in: ["pending", "under_review", "submitted", "resubmitted"] } },
+    ],
   })
     .select("name email role documents kycStatus createdAt phone companyName avatar verificationLevel")
     .sort({ "documents.submittedAt": 1, createdAt: 1 });
-
-  return userQueue;
 };
 
 const pendingDocuments = async () => {
   return getPendingQueues("personal");
 };
 
-const approveDocuments = async (userId, adminId) => {
+const approveDocuments = async (targetId, adminId, notes = "") => {
+  let userId = targetId;
+  const kycDoc = await KYC.findById(targetId);
+  if (kycDoc) {
+    kycDoc.verificationStatus = "approved";
+    kycDoc.verifiedAt = new Date();
+    kycDoc.reviewedBy = adminId;
+    kycDoc.reviewedAt = new Date();
+    if (notes) kycDoc.reviewNotes = notes;
+
+    kycDoc.history.push({
+      action: "approved",
+      performedBy: adminId,
+      notes: notes || "KYC verification approved",
+      timestamp: new Date(),
+    });
+
+    await kycDoc.save();
+    userId = kycDoc.userId;
+  } else {
+    await KYC.updateMany(
+      { userId: targetId, verificationStatus: { $in: ["pending", "under_review", "resubmitted", "submitted"] } },
+      {
+        verificationStatus: "approved",
+        verifiedAt: new Date(),
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+        reviewNotes: notes || "",
+        $push: {
+          history: {
+            action: "approved",
+            performedBy: adminId,
+            notes: notes || "Approved",
+            timestamp: new Date(),
+          },
+        },
+      },
+    );
+  }
+
   kycEvents.emit("kyc:approved", { userId, adminId });
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
   user.kycStatus = "approved";
-  user.documents.status = "approved";
-  user.documents.reviewedAt = new Date();
+  user.verifiedBadge = true;
+  user.isVerified = true;
+  if (user.documents) {
+    user.documents.status = "approved";
+    user.documents.reviewedAt = new Date();
+  }
   user.recomputeVerificationLevel();
+  user.calculateProfileCompleteness();
   await user.save({ validateBeforeSave: false });
   return user.toSafeJSON();
 };
 
-const rejectDocuments = async (userId, reason, adminId) => {
+const rejectDocuments = async (targetId, reason, adminId, notes = "") => {
+  if (!reason || String(reason).trim() === "") {
+    throw new ApiError(400, "A valid rejection reason is required.");
+  }
+
+  let userId = targetId;
+  const kycDoc = await KYC.findById(targetId);
+  if (kycDoc) {
+    kycDoc.verificationStatus = "rejected";
+    kycDoc.rejectionReason = reason;
+    kycDoc.reviewNotes = notes || "";
+    kycDoc.reviewedBy = adminId;
+    kycDoc.reviewedAt = new Date();
+
+    kycDoc.history.push({
+      action: "rejected",
+      performedBy: adminId,
+      reason,
+      notes: notes || "",
+      timestamp: new Date(),
+    });
+
+    await kycDoc.save();
+    userId = kycDoc.userId;
+  } else {
+    await KYC.updateMany(
+      { userId: targetId, verificationStatus: { $in: ["pending", "under_review", "resubmitted", "submitted"] } },
+      {
+        verificationStatus: "rejected",
+        rejectionReason: reason,
+        reviewNotes: notes || "",
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+        $push: {
+          history: {
+            action: "rejected",
+            performedBy: adminId,
+            reason,
+            notes: notes || "",
+            timestamp: new Date(),
+          },
+        },
+      },
+    );
+  }
+
   kycEvents.emit("kyc:rejected", { userId, reason, adminId });
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
   user.kycStatus = "rejected";
-  user.documents.status = "rejected";
-  user.documents.rejectionReason = reason || "Documents could not be verified";
-  user.documents.reviewedAt = new Date();
+  if (user.documents) {
+    user.documents.status = "rejected";
+    user.documents.rejectionReason = reason;
+    user.documents.reviewedAt = new Date();
+  }
   user.recomputeVerificationLevel();
+  user.calculateProfileCompleteness();
   await user.save({ validateBeforeSave: false });
   return user.toSafeJSON();
 };

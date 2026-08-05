@@ -72,7 +72,7 @@ const userSchema = new mongoose.Schema(
     // Dynamic Summary Status Flags
     kycStatus: {
       type: String,
-      enum: ["none", "pending", "approved", "rejected", "info_requested"],
+      enum: ["none", "pending", "under_review", "approved", "rejected", "resubmitted", "info_requested"],
       default: "none",
       index: true,
     },
@@ -139,12 +139,13 @@ const userSchema = new mongoose.Schema(
 
     // Documents (KYC Legacy & Extended)
     documents: {
+      referenceId: { type: String, default: "" },
       panCard: { type: String, default: "" },
       aadhar: { type: String, default: "" },
       businessReg: { type: String, default: "" },
       status: {
         type: String,
-        enum: ["none", "pending", "approved", "rejected", "info_requested"],
+        enum: ["none", "pending", "under_review", "approved", "rejected", "resubmitted", "info_requested"],
         default: "none",
       },
       rejectionReason: { type: String, default: "" },

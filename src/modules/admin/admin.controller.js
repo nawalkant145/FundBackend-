@@ -171,14 +171,16 @@ const approveDocuments = asyncHandler(async (req, res) => {
   const u = await adminService.approveDocuments(
     req.params.userId,
     req.user._id,
+    req.body?.notes,
   );
   res.json(new ApiResponse(200, { user: u }, "Documents approved"));
 });
 const rejectDocuments = asyncHandler(async (req, res) => {
   const u = await adminService.rejectDocuments(
     req.params.userId,
-    req.body.reason,
+    req.body?.reason,
     req.user._id,
+    req.body?.notes,
   );
   res.json(new ApiResponse(200, { user: u }, "Documents rejected"));
 });
