@@ -40,6 +40,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
       index: true,
+      set: function (v) {
+        if (!v) return "";
+        return require("../auth/auth.validation").normalizePhone(v);
+      },
       validate: {
         validator: function (v) {
           if (!v) return true; // optional in schema
@@ -51,18 +55,45 @@ const userSchema = new mongoose.Schema(
     country: { type: String, default: "" },
     bio: { type: String, default: "" },
 
-    // Verification
+    // Verification Levels & Badges (Level 1 to 5)
     isEmailVerified: { type: Boolean, default: false },
     isPhoneVerified: { type: Boolean, default: false },
     verificationLevel: {
       type: Number,
-      default: 0,
-      min: 0,
-      max: 3,
+      default: 1,
+      min: 1,
+      max: 5,
       index: true,
     },
-    isVerified: { type: Boolean, default: false }, // blue tick (level 3)
+    isVerified: { type: Boolean, default: false }, // legacy alias for blue tick
+    verifiedBadge: { type: Boolean, default: false }, // Level 2+ Personal ID verified blue tick
     verifiedAt: { type: Date },
+
+    // Dynamic Summary Status Flags
+    kycStatus: {
+      type: String,
+      enum: ["none", "pending", "approved", "rejected", "info_requested"],
+      default: "none",
+      index: true,
+    },
+    companyVerificationStatus: {
+      type: String,
+      enum: ["none", "pending", "approved", "rejected"],
+      default: "none",
+      index: true,
+    },
+    investmentVerificationStatus: {
+      type: String,
+      enum: ["none", "pending", "approved", "rejected"],
+      default: "none",
+      index: true,
+    },
+    riskLevel: {
+      type: String,
+      enum: ["low", "medium", "high", "critical"],
+      default: "low",
+      index: true,
+    },
 
     // OTPs (hashed)
     emailOtpHash: { type: String, select: false },
@@ -85,7 +116,7 @@ const userSchema = new mongoose.Schema(
     pitchDeck: { type: String, default: "" },
     website: { type: String, default: "" },
     linkedIn: { type: String, default: "" },
-    profileCompleteness: { type: Number, default: 0 },
+    profileCompleteness: { type: Number, default: 20 },
     totalPitchViews: { type: Number, default: 0 },
     activePitchId: { type: mongoose.Schema.Types.ObjectId, ref: "Video" },
     openToConnect: { type: Boolean, default: true },
@@ -106,14 +137,14 @@ const userSchema = new mongoose.Schema(
     portfolioCompanies: [{ type: String }],
     investmentThesis: { type: String, default: "" },
 
-    // Documents (KYC)
+    // Documents (KYC Legacy & Extended)
     documents: {
       panCard: { type: String, default: "" },
       aadhar: { type: String, default: "" },
       businessReg: { type: String, default: "" },
       status: {
         type: String,
-        enum: ["none", "pending", "approved", "rejected"],
+        enum: ["none", "pending", "approved", "rejected", "info_requested"],
         default: "none",
       },
       rejectionReason: { type: String, default: "" },
@@ -206,21 +237,62 @@ userSchema.methods.toSafeJSON = function () {
   return obj;
 };
 
-// Helper — recalculate verificationLevel from booleans
+// Helper — recalculate verificationLevel & profileCompleteness dynamically
 userSchema.methods.recomputeVerificationLevel = function () {
-  let lvl = 0;
-  if (this.isEmailVerified) lvl = 1;
-  if (this.isEmailVerified && this.isPhoneVerified) lvl = 2;
-  if (
-    this.isEmailVerified &&
-    this.isPhoneVerified &&
-    this.documents?.status === "approved"
-  ) {
+  let lvl = 1; // Default basic account
+  
+  // Level 2: Personal Identity Verified (Blue Badge)
+  if (this.kycStatus === "approved" || this.documents?.status === "approved") {
+    lvl = 2;
+    this.verifiedBadge = true;
+    this.isVerified = true;
+    if (!this.verifiedAt) this.verifiedAt = new Date();
+  } else {
+    this.verifiedBadge = false;
+    this.isVerified = false;
+  }
+
+  // Level 3: Founder Verification (Company Docs Approved)
+  if (lvl >= 2 && this.role === "founder" && this.companyVerificationStatus === "approved") {
     lvl = 3;
   }
+
+  // Level 4: Investor Verification (Transaction KYC Approved)
+  if (lvl >= 2 && this.role === "investor" && this.investmentVerificationStatus === "approved") {
+    lvl = 4;
+  }
+
+  // Level 5: Risk Compliance (Manual hold or critical anomaly)
+  if (this.riskLevel === "critical" || this.riskLevel === "high") {
+    lvl = 5;
+  }
+
   this.verificationLevel = lvl;
-  this.isVerified = lvl === 3;
-  if (lvl === 3 && !this.verifiedAt) this.verifiedAt = new Date();
+  this.calculateProfileCompleteness();
+};
+
+userSchema.methods.calculateProfileCompleteness = function () {
+  let score = 0;
+  if (this.isEmailVerified) score += 15;
+  if (this.isPhoneVerified) score += 15;
+  if (this.name && this.username) score += 15;
+  if (this.avatar) score += 10;
+  if (this.bio) score += 5;
+
+  if (this.kycStatus === "approved" || this.documents?.status === "approved") {
+    score += 20;
+  }
+
+  if (this.role === "founder") {
+    if (this.companyName) score += 10;
+    if (this.companyVerificationStatus === "approved") score += 10;
+  } else if (this.role === "investor") {
+    if (this.investorType) score += 10;
+    if (this.investmentVerificationStatus === "approved") score += 10;
+  }
+
+  this.profileCompleteness = Math.min(100, score);
+  return this.profileCompleteness;
 };
 
 // Helper — is the account currently suspended (and not yet expired)?
@@ -238,5 +310,13 @@ userSchema.methods.isProActive = function () {
     this.subscription.expiresAt > new Date()
   );
 };
+
+userSchema.pre("validate", function (next) {
+  if (this.phone) {
+    const { normalizePhone } = require("../auth/auth.validation");
+    this.phone = normalizePhone(this.phone);
+  }
+  next();
+});
 
 module.exports = mongoose.model("User", userSchema);

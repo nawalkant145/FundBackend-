@@ -10,11 +10,13 @@ const { uploadVideo } = require("../../middlewares/upload.middleware");
 
 router.use(authenticate);
 
+const { requireFounderVerified } = require("../../middlewares/verification.middleware");
+
 // Founder routes
 router.post(
   "/upload",
   authorize("founder"),
-  requireVerificationLevel(2),
+  requireFounderVerified,
   uploadVideo.single("video"),
   c.upload,
 );

@@ -33,6 +33,11 @@ const submitDocuments = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, { user }, "Documents submitted"));
 });
 
+const getProfileCompletion = asyncHandler(async (req, res) => {
+  const data = await userService.calculateProfileCompletion(req.user._id);
+  res.json(new ApiResponse(200, data, "Profile completion calculation"));
+});
+
 const getVerificationStatus = asyncHandler(async (req, res) => {
   const u = req.user;
   res.json(
@@ -153,6 +158,7 @@ module.exports = {
   uploadAvatar,
   uploadPitchDeck,
   submitDocuments,
+  getProfileCompletion,
   getVerificationStatus,
   updateFcmToken,
   getPublicProfile,

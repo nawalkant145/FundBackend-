@@ -154,7 +154,15 @@ const listTrash = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, data, "Trash"));
 });
 
-// KYC
+// KYC & Compliance Workspace (Level 1 to 5)
+const getOperationalKpis = asyncHandler(async (req, res) => {
+  const data = await adminService.getOperationalKpis();
+  res.json(new ApiResponse(200, data, "Operational KPIs"));
+});
+const getPendingQueues = asyncHandler(async (req, res) => {
+  const items = await adminService.getPendingQueues(req.query.type || req.params.type || "personal");
+  res.json(new ApiResponse(200, { items }, "Pending KYC Queue"));
+});
 const pendingDocuments = asyncHandler(async (req, res) => {
   const users = await adminService.pendingDocuments();
   res.json(new ApiResponse(200, { users }, "Pending KYC"));
@@ -173,6 +181,22 @@ const rejectDocuments = asyncHandler(async (req, res) => {
     req.user._id,
   );
   res.json(new ApiResponse(200, { user: u }, "Documents rejected"));
+});
+const approveCompanyKYC = asyncHandler(async (req, res) => {
+  const item = await adminService.approveCompanyKYC(req.params.companyId, req.user._id);
+  res.json(new ApiResponse(200, { item }, "Company verified"));
+});
+const rejectCompanyKYC = asyncHandler(async (req, res) => {
+  const item = await adminService.rejectCompanyKYC(req.params.companyId, req.body.reason, req.user._id);
+  res.json(new ApiResponse(200, { item }, "Company verification rejected"));
+});
+const approveInvestorKYC = asyncHandler(async (req, res) => {
+  const item = await adminService.approveInvestorKYC(req.params.investmentKycId, req.user._id);
+  res.json(new ApiResponse(200, { item }, "Investor transaction KYC approved"));
+});
+const rejectInvestorKYC = asyncHandler(async (req, res) => {
+  const item = await adminService.rejectInvestorKYC(req.params.investmentKycId, req.body.reason, req.user._id);
+  res.json(new ApiResponse(200, { item }, "Investor transaction KYC rejected"));
 });
 
 // Reports
@@ -381,6 +405,12 @@ module.exports = {
   pendingDocuments,
   approveDocuments,
   rejectDocuments,
+  getOperationalKpis,
+  getPendingQueues,
+  approveCompanyKYC,
+  rejectCompanyKYC,
+  approveInvestorKYC,
+  rejectInvestorKYC,
   listReports,
   resolveReport,
   listAllComments,

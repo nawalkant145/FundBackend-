@@ -24,7 +24,7 @@ const PHONE_RULES = {
   "+968": { min: 8,  max: 8  }, // Oman
   "+965": { min: 8,  max: 8  }, // Kuwait
   // 2-digit codes
-  "+91": { min: 10, max: 10 }, // India
+  "+91": { min: 10, max: 10 }, // India (strictly 10 subscriber digits)
   "+44": { min: 10, max: 10 }, // UK
   "+61": { min: 9,  max: 9  }, // Australia
   "+65": { min: 8,  max: 8  }, // Singapore
@@ -178,15 +178,16 @@ const validateRegister = (data) => {
   }
 
   // Phone — required at registration; must be in international format
+  const normalizedPhone = normalizePhone(String(phone || ""));
   if (!phone || phone === "") {
     errors.push("Phone number is required");
-  } else if (!isValidPhone(String(phone))) {
+  } else if (!isValidPhone(normalizedPhone)) {
     errors.push(
-      "Phone number must include your country code in international format " +
-      "(e.g. +919876543210 for India, +17025551234 for US, +971501234567 for UAE, " +
-      "+6591234567 for Singapore). The number of digits after the country code " +
-      "must match your country's standard.",
+      "Phone number must be a valid 10-digit mobile number for India (e.g. +919876543210 or 9876543210) " +
+      "or valid international format for other countries.",
     );
+  } else {
+    data.phone = normalizedPhone;
   }
 
   if (errors.length) throw new ApiError(400, "Validation failed", errors);
@@ -262,13 +263,15 @@ const validateVerifyEmailOtp = (data) => {
 const validateSendPhoneOtp = (data) => {
   const errors = [];
   const { phone } = data;
+  const normalizedPhone = normalizePhone(String(phone || ""));
 
-  if (!phone || !isValidPhone(String(phone))) {
+  if (!phone || !isValidPhone(normalizedPhone)) {
     errors.push(
-      "A valid phone number in international format is required " +
-      "(e.g. +919876543210 for India, +17025551234 for US, +971501234567 for UAE, " +
-      "+6591234567 for Singapore).",
+      "A valid 10-digit mobile number for India (e.g. +919876543210 or 9876543210) " +
+      "or valid international format for other countries is required.",
     );
+  } else {
+    data.phone = normalizedPhone;
   }
 
   if (errors.length) throw new ApiError(400, "Validation failed", errors);
@@ -344,6 +347,31 @@ const validateChangePassword = (data) => {
 
 // ─── Exports ───────────────────────────────────────────────────────────────
 
+const normalizePhone = (phone) => {
+  if (!phone || typeof phone !== "string") return "";
+  let cleaned = phone.replace(/[\s\-()\u00A0]/g, "");
+
+  if (cleaned.startsWith("+91")) {
+    let digits = cleaned.slice(3).replace(/^0+/, "");
+    if (digits.length > 10) digits = digits.slice(0, 10);
+    return "+91" + digits;
+  }
+
+  if (/^\d{10}$/.test(cleaned)) {
+    return "+91" + cleaned;
+  }
+
+  if (/^0\d{10}$/.test(cleaned)) {
+    return "+91" + cleaned.slice(1);
+  }
+
+  if (/^91\d{10}$/.test(cleaned)) {
+    return "+" + cleaned;
+  }
+
+  return cleaned;
+};
+
 module.exports = {
   validateRegister,
   validateLogin,
@@ -357,4 +385,5 @@ module.exports = {
   validateChangePassword,
   isValidPhone,
   isValidEmail,
+  normalizePhone,
 };

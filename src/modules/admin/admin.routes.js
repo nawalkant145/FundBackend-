@@ -38,10 +38,17 @@ router.get("/trash", c.listTrash);
 router.put("/videos/:id/restore", c.restoreVideo);
 router.delete("/videos/:id/purge", c.purgeVideo);
 
-// KYC
+// KYC & Operational Workspaces (Level 1 to 5)
+router.get("/kyc/kpis", c.getOperationalKpis);
+router.get("/kyc/queue", c.getPendingQueues);
+router.get("/kyc/queue/:type", c.getPendingQueues);
 router.get("/documents/pending", c.pendingDocuments);
 router.put("/documents/:userId/approve", c.approveDocuments);
 router.put("/documents/:userId/reject", c.rejectDocuments);
+router.put("/kyc/company/:companyId/approve", c.approveCompanyKYC);
+router.put("/kyc/company/:companyId/reject", c.rejectCompanyKYC);
+router.put("/kyc/investor/:investmentKycId/approve", c.approveInvestorKYC);
+router.put("/kyc/investor/:investmentKycId/reject", c.rejectInvestorKYC);
 
 // Reports
 router.get("/reports", c.listReports);
