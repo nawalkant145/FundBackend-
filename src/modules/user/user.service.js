@@ -27,6 +27,131 @@ const SAFE_FIELDS = [
   "privacyPrefs",
 ];
 
+const KYC = require("../kyc/kyc.model");
+const Company = require("../company/company.model");
+const InvestmentKYC = require("../investmentKyc/investmentKyc.model");
+
+const calculateProfileCompletion = async (userId) => {
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "User not found");
+
+  const [kycDoc, companyDoc, investorKycDoc] = await Promise.all([
+    KYC.findOne({ userId }).sort({ createdAt: -1 }),
+    Company.findOne({ founderId: userId }).sort({ createdAt: -1 }),
+    InvestmentKYC.findOne({ investorId: userId }).sort({ createdAt: -1 }),
+  ]);
+
+  const sections = [
+    {
+      id: "basic_info",
+      title: "Basic Information",
+      description: "Name, username, bio & phone number",
+      weight: 15,
+      isCompleted: !!(user.name && user.username && user.phone && user.bio),
+      status: !!(user.name && user.username && user.phone && user.bio) ? "completed" : "pending",
+      estimatedMinutes: 1,
+      targetAction: "edit_profile",
+    },
+    {
+      id: "email_verification",
+      title: "Email Verification",
+      description: "Verified email address for notifications",
+      weight: 15,
+      isCompleted: !!user.isEmailVerified,
+      status: user.isEmailVerified ? "completed" : "pending",
+      estimatedMinutes: 1,
+      targetAction: "verify_email",
+    },
+    {
+      id: "mobile_verification",
+      title: "Mobile OTP Verification",
+      description: "Verified mobile number for account security",
+      weight: 15,
+      isCompleted: !!user.isPhoneVerified,
+      status: user.isPhoneVerified ? "completed" : "pending",
+      estimatedMinutes: 1,
+      targetAction: "verify_mobile",
+    },
+    {
+      id: "avatar_photo",
+      title: "Profile Photo",
+      description: "Headshot avatar for trust & identification",
+      weight: 10,
+      isCompleted: !!user.avatar,
+      status: user.avatar ? "completed" : "pending",
+      estimatedMinutes: 1,
+      targetAction: "upload_avatar",
+    },
+    {
+      id: "identity_kyc",
+      title: "Identity Verification (Level 2)",
+      description: "Government ID & selfie for Blue Verified Badge",
+      weight: 20,
+      isCompleted: user.kycStatus === "approved" || user.documents?.status === "approved" || kycDoc?.verificationStatus === "approved",
+      status: kycDoc?.verificationStatus || user.kycStatus || user.documents?.status || "none",
+      rejectionReason: kycDoc?.rejectionReason || user.documents?.rejectionReason || "",
+      estimatedMinutes: 2,
+      targetAction: "kyc_identity",
+    },
+  ];
+
+  if (user.role === "founder") {
+    sections.push({
+      id: "founder_company",
+      title: "Founder & Company Verification (Level 3)",
+      description: "Certificate of Incorporation, CIN & GST",
+      weight: 25,
+      isCompleted: user.companyVerificationStatus === "approved",
+      status: user.companyVerificationStatus || "none",
+      rejectionReason: companyDoc?.rejectionReason || "",
+      estimatedMinutes: 3,
+      targetAction: "kyc_company",
+    });
+  } else if (user.role === "investor") {
+    sections.push({
+      id: "investor_kyc",
+      title: "Investor Transaction KYC (Level 4)",
+      description: "Address proof & bank account verification",
+      weight: 25,
+      isCompleted: user.investmentVerificationStatus === "approved",
+      status: user.investmentVerificationStatus || "none",
+      rejectionReason: investorKycDoc?.rejectionReason || "",
+      estimatedMinutes: 3,
+      targetAction: "kyc_investor",
+    });
+  }
+
+  const completedSections = sections.filter((s) => s.isCompleted);
+  const missingSections = sections.filter((s) => !s.isCompleted);
+
+  const totalScore = sections.reduce((acc, s) => acc + (s.isCompleted ? s.weight : 0), 0);
+  const estimatedTimeMinutes = missingSections.reduce((acc, s) => acc + s.estimatedMinutes, 0);
+  const nextRecommendedSection = missingSections[0] || null;
+
+  let profileStrength = "Getting Started";
+  if (totalScore >= 85) profileStrength = "All Set!";
+  else if (totalScore >= 60) profileStrength = "Strong Profile";
+  else if (totalScore >= 40) profileStrength = "Good Progress";
+
+  user.profileCompleteness = totalScore;
+  user.recomputeVerificationLevel();
+  await user.save({ validateBeforeSave: false });
+
+  return {
+    completion: totalScore,
+    completionPercentage: totalScore,
+    profileStrength,
+    completedSections,
+    missingSections,
+    totalSections: sections.length,
+    estimatedTime: estimatedTimeMinutes,
+    estimatedTimeMinutes,
+    nextRecommendedSection,
+    verificationLevel: user.verificationLevel,
+    verifiedBadge: user.verifiedBadge || user.isVerified,
+  };
+};
+
 const computeProfileCompleteness = (user) => {
   let total = 0;
   let filled = 0;
@@ -360,6 +485,7 @@ module.exports = {
   unblockUser,
   deleteAccount,
   search,
+  calculateProfileCompletion,
   computeProfileCompleteness,
   followUser,
   getFollowers,

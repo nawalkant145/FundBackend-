@@ -27,6 +27,7 @@ router.post(
   c.submitDocuments,
 );
 router.get("/verification-status", c.getVerificationStatus);
+router.get("/profile-completion", c.getProfileCompletion);
 router.put("/fcm-token", c.updateFcmToken);
 
 router.get("/search", c.search);

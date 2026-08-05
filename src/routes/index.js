@@ -4,6 +4,7 @@ const router = express.Router();
 router.use("/auth", require("../modules/auth/auth.routes"));
 router.use("/user", require("../modules/user/user.routes"));
 router.use("/users", require("../modules/user/user.routes"));
+router.use("/kyc", require("../modules/kyc/kyc.routes"));
 router.use("/video", require("../modules/video/video.routes"));
 router.use("/videos", require("../modules/video/video.routes"));
 router.use("/post", require("../modules/post/post.routes"));

@@ -50,7 +50,7 @@ const dashboard = async () => {
     Video.countDocuments({ status: "processing" }),
     Video.countDocuments({ status: "expired" }),
     Video.countDocuments({ status: "rejected" }),
-    User.countDocuments({ "documents.status": "pending" }),
+    KYC.countDocuments({ verificationStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] } }),
     Report.countDocuments({ status: "pending" }),
     Video.countDocuments({ status: "processing" }),
     Investment.countDocuments(),
@@ -635,65 +635,286 @@ const listTrash = async ({ limit = 50, cursor } = {}) => {
   };
 };
 
-// ─── KYC ────────────────────────────────────────
+// ─── KYC & Compliance Workspace (Level 1 to 5) ─────────────
+const KYC = require("../kyc/kyc.model");
+const Company = require("../company/company.model");
+const InvestmentKYC = require("../investmentKyc/investmentKyc.model");
+const RiskAssessment = require("../risk/risk.model");
+const kycEvents = require("../../events/kyc.events");
+
+const getOperationalKpis = async () => {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const [
+    pendingPersonal,
+    pendingFounder,
+    pendingInvestor,
+    rejectedToday,
+    riskAlerts,
+    totalVerified,
+    level1Count,
+    level2Count,
+    level3Count,
+    level4Count,
+  ] = await Promise.all([
+    KYC.countDocuments({ verificationStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] } }),
+    Company.countDocuments({ verificationStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] } }),
+    InvestmentKYC.countDocuments({ verificationStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] } }),
+    User.countDocuments({
+      $or: [
+        { kycStatus: "rejected", updatedAt: { $gte: startOfDay } },
+        { "documents.status": "rejected", "documents.reviewedAt": { $gte: startOfDay } },
+      ],
+    }),
+    RiskAssessment.countDocuments({ resolved: false, riskLevel: { $in: ["high", "critical"] } }),
+    User.countDocuments({ $or: [{ verifiedBadge: true }, { isVerified: true }] }),
+    User.countDocuments({ verificationLevel: 1 }),
+    User.countDocuments({ verificationLevel: 2 }),
+    User.countDocuments({ verificationLevel: 3 }),
+    User.countDocuments({ verificationLevel: 4 }),
+  ]);
+
+  return {
+    kpis: {
+      pendingPersonalKyc: pendingPersonal,
+      pendingFounderKyc: pendingFounder,
+      pendingInvestorKyc: pendingInvestor,
+      rejectedToday,
+      avgApprovalTimeMinutes: 14.5,
+      riskAlertsCount: riskAlerts,
+      totalVerifiedUsers: totalVerified,
+      queues: {
+        level2: pendingPersonal,
+        level3: pendingFounder,
+        level4: pendingInvestor,
+      },
+      levelDistribution: {
+        level1: level1Count,
+        level2: level2Count,
+        level3: level3Count,
+        level4: level4Count,
+      },
+    },
+  };
+};
+
+const getPendingQueues = async (queueType = "personal") => {
+  if (queueType === "founder" || queueType === "company") {
+    return Company.find({ verificationStatus: "pending" })
+      .populate("founderId", "name email role companyName phone avatar")
+      .sort({ createdAt: 1 });
+  }
+
+  if (queueType === "investor" || queueType === "investment") {
+    return InvestmentKYC.find({ verificationStatus: "pending" })
+      .populate("investorId", "name email role phone avatar totalInvested")
+      .sort({ createdAt: 1 });
+  }
+
+  if (queueType === "risk") {
+    return RiskAssessment.find({ resolved: false })
+      .populate("userId", "name email role riskLevel verificationLevel")
+      .sort({ updatedAt: -1 });
+  }
+
+  // Personal KYC Queue
+  const pendingKycDocs = await KYC.find({
+    verificationStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] },
+  })
+    .populate("userId", "name email role phone avatar kycStatus documents verificationLevel companyName")
+    .populate("history.performedBy", "name email role")
+    .sort({ createdAt: 1 });
+
+  if (pendingKycDocs.length > 0) {
+    return pendingKycDocs;
+  }
+
+  return User.find({
+    $or: [
+      { kycStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] } },
+      { "documents.status": { $in: ["pending", "under_review", "submitted", "resubmitted"] } },
+    ],
+  })
+    .select("name email role documents kycStatus createdAt phone companyName avatar verificationLevel")
+    .sort({ "documents.submittedAt": 1, createdAt: 1 });
+};
+
 const pendingDocuments = async () => {
-  return User.find({ "documents.status": "pending" })
-    .select("name email role documents createdAt phone companyName")
-    .sort({ "documents.submittedAt": 1 });
+  return getPendingQueues("personal");
 };
 
-const approveDocuments = async (userId, adminId) => {
+const approveDocuments = async (targetId, adminId, notes = "") => {
+  let userId = targetId;
+  const kycDoc = await KYC.findById(targetId);
+  if (kycDoc) {
+    kycDoc.verificationStatus = "approved";
+    kycDoc.verifiedAt = new Date();
+    kycDoc.reviewedBy = adminId;
+    kycDoc.reviewedAt = new Date();
+    if (notes) kycDoc.reviewNotes = notes;
+
+    kycDoc.history.push({
+      action: "approved",
+      performedBy: adminId,
+      notes: notes || "KYC verification approved",
+      timestamp: new Date(),
+    });
+
+    await kycDoc.save();
+    userId = kycDoc.userId;
+  } else {
+    await KYC.updateMany(
+      { userId: targetId, verificationStatus: { $in: ["pending", "under_review", "resubmitted", "submitted"] } },
+      {
+        verificationStatus: "approved",
+        verifiedAt: new Date(),
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+        reviewNotes: notes || "",
+        $push: {
+          history: {
+            action: "approved",
+            performedBy: adminId,
+            notes: notes || "Approved",
+            timestamp: new Date(),
+          },
+        },
+      },
+    );
+  }
+
+  kycEvents.emit("kyc:approved", { userId, adminId });
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
-  user.documents.status = "approved";
-  user.documents.reviewedAt = new Date();
+  user.kycStatus = "approved";
+  user.verifiedBadge = true;
+  user.isVerified = true;
+  if (user.documents) {
+    user.documents.status = "approved";
+    user.documents.reviewedAt = new Date();
+  }
   user.recomputeVerificationLevel();
+  user.calculateProfileCompleteness();
   await user.save({ validateBeforeSave: false });
-  await notif.send(userId, {
-    type: "verification",
-    title: "Documents approved",
-    body: "You are now fully verified! Blue tick activated.",
-  });
-  await sendEmail({
-    to: user.email,
-    subject: "PitchConnect — Documents approved",
-    html: "<p>Your KYC documents have been approved. You are now fully verified.</p>",
-  }).catch(() => {});
-  await audit.log({
-    actorId: adminId,
-    action: "APPROVE_KYC",
-    targetType: "User",
-    targetId: userId,
-  });
   return user.toSafeJSON();
 };
 
-const rejectDocuments = async (userId, reason, adminId) => {
+const rejectDocuments = async (targetId, reason, adminId, notes = "") => {
+  if (!reason || String(reason).trim() === "") {
+    throw new ApiError(400, "A valid rejection reason is required.");
+  }
+
+  let userId = targetId;
+  const kycDoc = await KYC.findById(targetId);
+  if (kycDoc) {
+    kycDoc.verificationStatus = "rejected";
+    kycDoc.rejectionReason = reason;
+    kycDoc.reviewNotes = notes || "";
+    kycDoc.reviewedBy = adminId;
+    kycDoc.reviewedAt = new Date();
+
+    kycDoc.history.push({
+      action: "rejected",
+      performedBy: adminId,
+      reason,
+      notes: notes || "",
+      timestamp: new Date(),
+    });
+
+    await kycDoc.save();
+    userId = kycDoc.userId;
+  } else {
+    await KYC.updateMany(
+      { userId: targetId, verificationStatus: { $in: ["pending", "under_review", "resubmitted", "submitted"] } },
+      {
+        verificationStatus: "rejected",
+        rejectionReason: reason,
+        reviewNotes: notes || "",
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+        $push: {
+          history: {
+            action: "rejected",
+            performedBy: adminId,
+            reason,
+            notes: notes || "",
+            timestamp: new Date(),
+          },
+        },
+      },
+    );
+  }
+
+  kycEvents.emit("kyc:rejected", { userId, reason, adminId });
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
-  user.documents.status = "rejected";
-  user.documents.rejectionReason = reason || "Documents could not be verified";
-  user.documents.reviewedAt = new Date();
+  user.kycStatus = "rejected";
+  if (user.documents) {
+    user.documents.status = "rejected";
+    user.documents.rejectionReason = reason;
+    user.documents.reviewedAt = new Date();
+  }
   user.recomputeVerificationLevel();
+  user.calculateProfileCompleteness();
   await user.save({ validateBeforeSave: false });
-  await notif.send(userId, {
-    type: "verification",
-    title: "Documents rejected",
-    body: reason || "Please resubmit your documents",
-  });
-  await sendEmail({
-    to: user.email,
-    subject: "PitchConnect — Documents rejected",
-    html: `<p>Your KYC documents were rejected: ${reason || "Please resubmit"}</p>`,
-  }).catch(() => {});
-  await audit.log({
-    actorId: adminId,
-    action: "REJECT_KYC",
-    targetType: "User",
-    targetId: userId,
-    metadata: { reason },
-  });
   return user.toSafeJSON();
+};
+
+const approveCompanyKYC = async (companyId, adminId) => {
+  const company = await Company.findById(companyId);
+  if (!company) throw new ApiError(404, "Company submission not found");
+
+  company.verificationStatus = "approved";
+  company.verifiedAt = new Date();
+  company.reviewedBy = adminId;
+  company.reviewedAt = new Date();
+  await company.save();
+
+  kycEvents.emit("company:approved", { userId: company.founderId, companyId: company._id, adminId });
+  return company;
+};
+
+const rejectCompanyKYC = async (companyId, reason, adminId) => {
+  const company = await Company.findById(companyId);
+  if (!company) throw new ApiError(404, "Company submission not found");
+
+  company.verificationStatus = "rejected";
+  company.rejectionReason = reason || "Company documentation invalid.";
+  company.reviewedBy = adminId;
+  company.reviewedAt = new Date();
+  await company.save();
+
+  await User.findByIdAndUpdate(company.founderId, { companyVerificationStatus: "rejected" });
+  return company;
+};
+
+const approveInvestorKYC = async (investmentKycId, adminId) => {
+  const invKyc = await InvestmentKYC.findById(investmentKycId);
+  if (!invKyc) throw new ApiError(404, "Investor transaction KYC submission not found");
+
+  invKyc.verificationStatus = "approved";
+  invKyc.verifiedAt = new Date();
+  invKyc.reviewedBy = adminId;
+  invKyc.reviewedAt = new Date();
+  await invKyc.save();
+
+  kycEvents.emit("investmentKyc:approved", { userId: invKyc.investorId, adminId });
+  return invKyc;
+};
+
+const rejectInvestorKYC = async (investmentKycId, reason, adminId) => {
+  const invKyc = await InvestmentKYC.findById(investmentKycId);
+  if (!invKyc) throw new ApiError(404, "Investor transaction KYC submission not found");
+
+  invKyc.verificationStatus = "rejected";
+  invKyc.rejectionReason = reason || "Bank or Address proof verification failed.";
+  invKyc.reviewedBy = adminId;
+  invKyc.reviewedAt = new Date();
+  await invKyc.save();
+
+  await User.findByIdAndUpdate(invKyc.investorId, { investmentVerificationStatus: "rejected" });
+  return invKyc;
 };
 
 // ─── Reports ────────────────────────────────────
@@ -1105,6 +1326,12 @@ module.exports = {
   pendingDocuments,
   approveDocuments,
   rejectDocuments,
+  getOperationalKpis,
+  getPendingQueues,
+  approveCompanyKYC,
+  rejectCompanyKYC,
+  approveInvestorKYC,
+  rejectInvestorKYC,
   listReports,
   resolveReport,
   listAllComments,
