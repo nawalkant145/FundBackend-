@@ -33,6 +33,22 @@ const documentFilter = (req, file, cb) => {
   }
 };
 
+const chatAttachmentFilter = (req, file, cb) => {
+  if (
+    /^image\//.test(file.mimetype) ||
+    /^video\//.test(file.mimetype) ||
+    /^audio\//.test(file.mimetype) ||
+    /^text\//.test(file.mimetype) ||
+    /^(application\/pdf|application\/msword|application\/vnd\.|application\/zip|application\/x-zip-compressed)/.test(
+      file.mimetype
+    )
+  ) {
+    cb(null, true);
+  } else {
+    cb(new ApiError(400, "Unsupported file format for chat attachment"));
+  }
+};
+
 const courseMediaFilter = (req, file, cb) => {
   if (file.fieldname === "thumbnail") {
     if (/^image\/(jpeg|png|jpg|webp)$/.test(file.mimetype)) cb(null, true);
@@ -41,7 +57,11 @@ const courseMediaFilter = (req, file, cb) => {
     if (/^video\/(mp4|quicktime|webm|x-matroska)$/.test(file.mimetype)) cb(null, true);
     else cb(new ApiError(400, "Video must be an MP4, MOV, or WEBM file"));
   } else if (file.fieldname === "document") {
-    if (/^(image\/(jpeg|png|jpg|webp)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document))$/.test(file.mimetype)) {
+    if (
+      /^(image\/(jpeg|png|jpg|webp)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document))$/.test(
+        file.mimetype
+      )
+    ) {
       cb(null, true);
     } else {
       cb(new ApiError(400, "Document must be a PDF, DOC, DOCX, or Image"));
@@ -69,6 +89,12 @@ const uploadDocument = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
+const uploadChatAttachment = multer({
+  storage,
+  fileFilter: chatAttachmentFilter,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+});
+
 const uploadCourseMedia = multer({
   storage,
   fileFilter: courseMediaFilter,
@@ -79,6 +105,7 @@ module.exports = {
   uploadImage,
   uploadVideo,
   uploadDocument,
+  uploadChatAttachment,
   uploadCourseMedia,
   TMP_DIR,
 };

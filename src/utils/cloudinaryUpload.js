@@ -12,16 +12,22 @@ const cleanupTempFile = (filePath) => {
   }
 };
 
+const path = require("path");
+
 const uploadToCloudinary = async (filePath, options = {}) => {
   if (!process.env.CLOUDINARY_CLOUD_NAME) {
-    cleanupTempFile(filePath);
-    throw new ApiError(500, "Cloudinary not configured");
+    const basename = path.basename(filePath);
+    return {
+      url: `/uploads/${basename}`,
+      publicId: basename,
+    };
   }
   try {
     const result = await cloudinary.uploader.upload(filePath, {
       resource_type: "auto",
       ...options,
     });
+    cleanupTempFile(filePath);
     return {
       url: result.secure_url,
       publicId: result.public_id,
@@ -32,9 +38,12 @@ const uploadToCloudinary = async (filePath, options = {}) => {
       bytes: result.bytes,
     };
   } catch (err) {
-    throw new ApiError(500, `Cloudinary upload failed: ${err.message}`);
-  } finally {
-    cleanupTempFile(filePath);
+    console.warn("⚠️ Cloudinary upload error, using local fallback:", err.message);
+    const basename = path.basename(filePath);
+    return {
+      url: `/uploads/${basename}`,
+      publicId: basename,
+    };
   }
 };
 
@@ -59,7 +68,6 @@ const uploadDocumentToCloudinary = async (filePath, folder = "documents") => {
   return uploadToCloudinary(filePath, {
     resource_type: "auto",
     folder,
-    type: "private", // signed URL access
   });
 };
 
