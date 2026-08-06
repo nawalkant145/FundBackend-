@@ -4,7 +4,12 @@ const ApiError = require("../../utils/ApiError");
 const postService = require("./post.service");
 
 const create = asyncHandler(async (req, res) => {
-  const post = await postService.createPost(req.user._id, req.files, req.body);
+  const post = await postService.createPost(
+    req.user._id,
+    req.files,
+    req.body,
+    req.user.role,
+  );
   res.status(201).json(new ApiResponse(201, { post }, "Post created"));
 });
 
@@ -14,6 +19,7 @@ const createThoughts = asyncHandler(async (req, res) => {
     req.user._id,
     [], // no files — text only
     { ...req.body, type: "text" }, // force type to text
+    req.user.role,
   );
   res.status(201).json(new ApiResponse(201, { post }, "Thought posted"));
 });

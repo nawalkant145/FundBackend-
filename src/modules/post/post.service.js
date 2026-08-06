@@ -13,7 +13,7 @@ const {
 const MAX_POSTS_PER_DAY = 10;
 const MAX_IMAGES = 10;
 
-const createPost = async (userId, files, body) => {
+const createPost = async (userId, files, body, userRole) => {
   const settings = await settingsService.getSettings().catch(() => ({}));
   if (settings.postsEnabled === false) {
     throw new ApiError(403, "Posting is temporarily disabled by admin");
@@ -32,6 +32,28 @@ const createPost = async (userId, files, body) => {
   }
 
   const { caption, link, hashtags, type } = body;
+
+  // Investor-specific post card restriction: ONLY images section and thought section allowed
+  if (userRole === "investor") {
+    const postType = type || (files?.length > 0 ? "images" : "text");
+    if (postType === "text") {
+      if (!caption || !caption.trim()) {
+        throw new ApiError(400, "Thought section requires text content");
+      }
+      if (files?.length > 0) {
+        throw new ApiError(400, "Thought section cannot include images");
+      }
+    } else if (postType === "images") {
+      if (!files || files.length === 0) {
+        throw new ApiError(400, "Images section requires at least one image file");
+      }
+    } else {
+      throw new ApiError(
+        400,
+        "Investor post card only supports images section and thought section",
+      );
+    }
+  }
 
   // Thoughts (text-only) posts must not carry any images
   if (type === "text" && files?.length > 0) {
