@@ -25,10 +25,15 @@ const ICE_SERVERS = () => {
 };
 
 const initiateCall = async (callerId, { receiverId, callType, type }) => {
-  const finalCallType = callType || type || "voice";
-  const normalizedType = finalCallType === "audio" ? "voice" : finalCallType;
+  const finalCallType = callType || type || "meeting";
+  const normalizedType =
+    finalCallType === "meeting" || finalCallType === "video"
+      ? "video"
+      : finalCallType === "audio"
+        ? "voice"
+        : finalCallType;
 
-  if (!receiverId || !["voice", "video", "audio"].includes(finalCallType)) {
+  if (!receiverId || !["voice", "video", "audio", "meeting"].includes(finalCallType)) {
     throw new ApiError(400, "receiverId and valid callType required");
   }
   if (callerId.toString() === receiverId.toString()) {

@@ -17,10 +17,10 @@ const callSchema = new mongoose.Schema(
     chatId: { type: mongoose.Schema.Types.ObjectId, ref: "Chat", index: true },
     callType: {
       type: String,
-      enum: ["voice", "video", "audio"],
-      default: "voice",
+      enum: ["voice", "video", "audio", "meeting"],
+      default: "meeting",
     },
-    type: { type: String, enum: ["audio", "video", "voice"], default: "voice" }, // Alias
+    type: { type: String, enum: ["audio", "video", "voice", "meeting"], default: "meeting" }, // Alias
     status: {
       type: String,
       enum: [
