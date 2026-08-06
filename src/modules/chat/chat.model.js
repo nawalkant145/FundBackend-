@@ -39,21 +39,45 @@ const messageSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    text: { type: String, default: "" },
-    type: {
+    receiverId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    message: { type: String, default: "" },
+    text: { type: String, default: "" }, // Legacy compatibility alias
+    messageType: {
       type: String,
-      enum: ["text", "image", "file", "system"],
+      enum: ["text", "image", "video", "audio", "document", "link", "system"],
       default: "text",
     },
-    fileUrl: { type: String, default: "" },
+    type: { type: String, default: "text" }, // Legacy compatibility alias
+    attachment: {
+      url: { type: String, default: "" },
+      name: { type: String, default: "" },
+      size: { type: Number, default: 0 },
+      mimeType: { type: String, default: "" },
+    },
+    fileUrl: { type: String, default: "" }, // Legacy compatibility alias
+    status: {
+      type: String,
+      enum: ["sent", "delivered", "seen"],
+      default: "sent",
+      index: true,
+    },
     isRead: { type: Boolean, default: false },
     readAt: { type: Date },
-    isDeleted: { type: Boolean, default: false },
+    replyTo: { type: mongoose.Schema.Types.ObjectId, ref: "Message", default: null },
+    deletedFor: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    deletedEveryone: { type: Boolean, default: false },
+    isDeleted: { type: Boolean, default: false }, // Legacy compatibility alias
+    edited: { type: Boolean, default: false },
   },
   { timestamps: true },
 );
 
 messageSchema.index({ chatId: 1, createdAt: -1 });
+messageSchema.index({ chatId: 1, messageType: 1 });
 
 const Chat = mongoose.model("Chat", chatSchema);
 const Message = mongoose.model("Message", messageSchema);

@@ -55,30 +55,92 @@ const getMessages = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, result, "Messages fetched"));
 });
 
+const { getIO } = require("../../socket");
+
 const sendMessage = asyncHandler(async (req, res) => {
-  const { text, type, fileUrl } = req.body;
+  const { message, text, messageType, type, attachment, fileUrl, receiverId, replyTo } = req.body;
   const result = await chatService.sendMessage({
     chatId: req.params.chatId,
     senderId: req.user._id,
+    receiverId,
+    message,
     text,
+    messageType,
     type,
+    attachment,
     fileUrl,
+    replyTo,
   });
+
+  try {
+    const io = getIO();
+    if (io && result?.message) {
+      const chatIdStr = req.params.chatId.toString();
+      io.to(chatIdStr).emit("new_message", result.message);
+      io.to(chatIdStr).emit("receive_message", result.message);
+    }
+  } catch (e) {
+    console.warn("Socket broadcast warning in sendMessage:", e.message);
+  }
+
   res.status(201).json(new ApiResponse(201, result, "Message sent"));
+});
+
+const editMessage = asyncHandler(async (req, res) => {
+  const { messageId } = req.params;
+  const { message, text } = req.body;
+  const updated = await chatService.editMessage(messageId, req.user._id, message || text || "");
+  res.json(new ApiResponse(200, { message: updated }, "Message edited"));
+});
+
+const deleteMessage = asyncHandler(async (req, res) => {
+  const { messageId } = req.params;
+  const { deleteForEveryone } = req.body;
+  const updated = await chatService.deleteMessage(messageId, req.user._id, !!deleteForEveryone);
+  res.json(new ApiResponse(200, { message: updated }, "Message deleted"));
+});
+
+const searchMessages = asyncHandler(async (req, res) => {
+  const { chatId } = req.params;
+  const { query, limit } = req.query;
+  const result = await chatService.searchMessages(chatId, req.user._id, { query, limit });
+  res.json(new ApiResponse(200, result, "Messages found"));
+});
+
+const getChatMedia = asyncHandler(async (req, res) => {
+  const { chatId } = req.params;
+  const { mediaType, limit, cursor } = req.query;
+  const result = await chatService.getChatMedia(chatId, req.user._id, { mediaType, limit, cursor });
+  res.json(new ApiResponse(200, result, "Media gallery fetched"));
 });
 
 const uploadAttachment = asyncHandler(async (req, res) => {
   if (!req.file) throw new ApiError(400, "File required");
   const isImage = /^image\//.test(req.file.mimetype);
+  const isVideo = /^video\//.test(req.file.mimetype);
+  const isAudio = /^audio\//.test(req.file.mimetype);
+
+  const folder = isImage ? "chat-images" : isVideo ? "chat-videos" : isAudio ? "chat-audio" : "chat-files";
   const result = isImage
-    ? await uploadImageToCloudinary(req.file.path, "chat-images")
-    : await uploadDocumentToCloudinary(req.file.path, "chat-files");
+    ? await uploadImageToCloudinary(req.file.path, folder)
+    : await uploadDocumentToCloudinary(req.file.path, folder);
+
+  const determinedType = isImage ? "image" : isVideo ? "video" : isAudio ? "audio" : "document";
+
   res.status(201).json(
     new ApiResponse(
       201,
       {
         fileUrl: result.url,
-        type: isImage ? "image" : "file",
+        url: result.url,
+        messageType: determinedType,
+        type: determinedType,
+        attachment: {
+          url: result.url,
+          name: req.file.originalname || "attachment",
+          size: req.file.size || 0,
+          mimeType: req.file.mimetype,
+        },
       },
       "File uploaded",
     ),
@@ -109,6 +171,10 @@ module.exports = {
   listChats,
   getMessages,
   sendMessage,
+  editMessage,
+  deleteMessage,
+  searchMessages,
+  getChatMedia,
   uploadAttachment,
   markRead,
   deleteChat,

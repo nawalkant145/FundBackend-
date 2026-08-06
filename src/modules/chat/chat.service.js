@@ -223,7 +223,12 @@ const getMessages = async (chatId, userId, { cursor, limit = 30 } = {}) => {
     throw new ApiError(403, "Not a participant of this chat");
   }
   limit = Math.min(Number(limit) || 30, 100);
-  const q = { chatId, isDeleted: { $ne: true } };
+  const q = {
+    chatId,
+    deletedEveryone: { $ne: true },
+    deletedFor: { $ne: userId },
+    isDeleted: { $ne: true },
+  };
   if (cursor) {
     if (!mongoose.Types.ObjectId.isValid(cursor)) {
       throw new ApiError(400, "Invalid cursor");
@@ -233,9 +238,27 @@ const getMessages = async (chatId, userId, { cursor, limit = 30 } = {}) => {
   const messages = await Message.find(q)
     .sort({ _id: -1 })
     .limit(limit + 1)
+    .populate("replyTo", "_id senderId message text messageType attachment")
     .lean();
+
   const hasMore = messages.length > limit;
   const items = (hasMore ? messages.slice(0, limit) : messages).reverse();
+
+  // Normalize message fields to match standard schema
+  items.forEach((m) => {
+    if (!m.message) m.message = m.text || "";
+    if (!m.text) m.text = m.message || "";
+    if (!m.messageType) m.messageType = m.type || "text";
+    if (!m.type) m.type = m.messageType || "text";
+    if (!m.status) m.status = m.isRead ? "seen" : "sent";
+    if (!m.createdAt) m.createdAt = m.updatedAt || new Date().toISOString();
+    if (!m.attachment) {
+      m.attachment = m.fileUrl
+        ? { url: m.fileUrl, name: "", size: 0, mimeType: "" }
+        : { url: "", name: "", size: 0, mimeType: "" };
+    }
+  });
+
   const nextCursor = hasMore ? messages[limit - 1]._id : null;
   return { messages: items, nextCursor, hasMore };
 };
@@ -243,14 +266,22 @@ const getMessages = async (chatId, userId, { cursor, limit = 30 } = {}) => {
 const sendMessage = async ({
   chatId,
   senderId,
+  receiverId,
+  message: msgContent,
   text,
+  messageType = "text",
   type = "text",
+  attachment,
   fileUrl = "",
+  replyTo = null,
 }) => {
   if (!mongoose.Types.ObjectId.isValid(chatId)) {
     throw new ApiError(400, "Invalid chatId");
   }
-  if (!text && !fileUrl) {
+  const bodyText = msgContent || text || "";
+  const finalType = messageType || type || "text";
+
+  if (!bodyText && !fileUrl && (!attachment || !attachment.url)) {
     throw new ApiError(400, "Message content required");
   }
   const chat = await Chat.findById(chatId);
@@ -259,18 +290,54 @@ const sendMessage = async ({
     throw new ApiError(403, "Not a participant of this chat");
   }
 
-  const message = await Message.create({
+  let calculatedReceiverId = receiverId;
+  if (!calculatedReceiverId) {
+    if (chat.founderId && chat.founderId.toString() !== senderId.toString()) {
+      calculatedReceiverId = chat.founderId;
+    } else if (chat.investorId && chat.investorId.toString() !== senderId.toString()) {
+      calculatedReceiverId = chat.investorId;
+    } else if (Array.isArray(chat.participants)) {
+      calculatedReceiverId = chat.participants.find(
+        (p) => p && p.toString() !== senderId.toString(),
+      );
+    }
+  }
+
+  if (!calculatedReceiverId) {
+    throw new ApiError(400, "Receiver not found for this chat");
+  }
+
+  const attachmentObj = attachment || {
+    url: fileUrl || "",
+    name: "",
+    size: 0,
+    mimeType: "",
+  };
+
+  const messageDoc = await Message.create({
     chatId,
     senderId,
-    text: text || "",
-    type,
-    fileUrl,
+    receiverId: calculatedReceiverId,
+    message: bodyText,
+    text: bodyText,
+    messageType: finalType,
+    type: finalType,
+    attachment: attachmentObj,
+    fileUrl: attachmentObj.url || fileUrl,
+    replyTo: replyTo && mongoose.Types.ObjectId.isValid(replyTo) ? replyTo : null,
+    status: "sent",
   });
 
-  chat.lastMessage = type === "text" ? text : `[${type}]`;
+  const populatedMessage = await Message.findById(messageDoc._id)
+    .populate("replyTo", "_id senderId message text messageType attachment")
+    .lean();
+
+  if (!populatedMessage.message) populatedMessage.message = populatedMessage.text || "";
+  if (!populatedMessage.messageType) populatedMessage.messageType = populatedMessage.type || "text";
+
+  chat.lastMessage = finalType === "text" ? bodyText : `[${finalType}]`;
   chat.lastMessageAt = new Date();
 
-  // Repair participants array if needed
   if (!chat.participants || chat.participants.length < 2) {
     chat.participants = [chat.founderId, chat.investorId].filter(Boolean);
   }
@@ -284,7 +351,116 @@ const sendMessage = async ({
   }
   await chat.save();
 
-  return { message, chat };
+  return { message: populatedMessage, chat };
+};
+
+const editMessage = async (messageId, userId, newText) => {
+  if (!mongoose.Types.ObjectId.isValid(messageId)) {
+    throw new ApiError(400, "Invalid messageId");
+  }
+  const msg = await Message.findById(messageId);
+  if (!msg) throw new ApiError(404, "Message not found");
+  if (msg.senderId.toString() !== userId.toString()) {
+    throw new ApiError(403, "Only the sender can edit this message");
+  }
+  if (msg.deletedEveryone) {
+    throw new ApiError(400, "Cannot edit deleted message");
+  }
+
+  msg.message = newText;
+  msg.text = newText;
+  msg.edited = true;
+  await msg.save();
+  return msg;
+};
+
+const deleteMessage = async (messageId, userId, deleteForEveryone = false) => {
+  if (!mongoose.Types.ObjectId.isValid(messageId)) {
+    throw new ApiError(400, "Invalid messageId");
+  }
+  const msg = await Message.findById(messageId);
+  if (!msg) throw new ApiError(404, "Message not found");
+
+  if (deleteForEveryone) {
+    if (msg.senderId.toString() !== userId.toString()) {
+      throw new ApiError(403, "Only the sender can delete for everyone");
+    }
+    msg.deletedEveryone = true;
+    msg.isDeleted = true;
+    msg.message = "This message was deleted";
+    msg.text = "This message was deleted";
+  } else {
+    if (!msg.deletedFor.includes(userId)) {
+      msg.deletedFor.push(userId);
+    }
+  }
+  await msg.save();
+  return msg;
+};
+
+const searchMessages = async (chatId, userId, { query, limit = 20 } = {}) => {
+  if (!mongoose.Types.ObjectId.isValid(chatId)) {
+    throw new ApiError(400, "Invalid chatId");
+  }
+  if (!query || typeof query !== "string") return { messages: [] };
+
+  const chat = await Chat.findById(chatId);
+  if (!chat) throw new ApiError(404, "Chat not found");
+  if (!isParticipant(chat, userId)) {
+    throw new ApiError(403, "Not a participant");
+  }
+
+  const messages = await Message.find({
+    chatId,
+    deletedEveryone: { $ne: true },
+    deletedFor: { $ne: userId },
+    $or: [
+      { message: { $regex: query, $options: "i" } },
+      { text: { $regex: query, $options: "i" } },
+    ],
+  })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .lean();
+
+  return { messages };
+};
+
+const getChatMedia = async (chatId, userId, { mediaType = "all", limit = 30, cursor } = {}) => {
+  if (!mongoose.Types.ObjectId.isValid(chatId)) {
+    throw new ApiError(400, "Invalid chatId");
+  }
+  const chat = await Chat.findById(chatId);
+  if (!chat) throw new ApiError(404, "Chat not found");
+  if (!isParticipant(chat, userId)) {
+    throw new ApiError(403, "Not a participant");
+  }
+
+  const q = {
+    chatId,
+    deletedEveryone: { $ne: true },
+    deletedFor: { $ne: userId },
+  };
+
+  if (mediaType === "images") q.$or = [{ messageType: "image" }, { type: "image" }];
+  else if (mediaType === "videos") q.$or = [{ messageType: "video" }, { type: "video" }];
+  else if (mediaType === "documents") q.$or = [{ messageType: "document" }, { type: "file" }];
+  else if (mediaType === "audio") q.$or = [{ messageType: "audio" }, { type: "audio" }];
+  else if (mediaType === "links") q.$or = [{ messageType: "link" }, { message: { $regex: "https?://", $options: "i" } }];
+  else {
+    q.$or = [
+      { messageType: { $in: ["image", "video", "audio", "document", "link"] } },
+      { type: { $in: ["image", "file", "video", "audio"] } },
+      { fileUrl: { $ne: "" } },
+    ];
+  }
+
+  if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
+    q._id = { $lt: cursor };
+  }
+
+  const items = await Message.find(q).sort({ _id: -1 }).limit(limit).lean();
+  return { media: items };
 };
 
 const markRead = async (chatId, userId) => {
@@ -298,8 +474,8 @@ const markRead = async (chatId, userId) => {
   }
 
   await Message.updateMany(
-    { chatId, senderId: { $ne: userId }, isRead: false },
-    { isRead: true, readAt: new Date() },
+    { chatId, senderId: { $ne: userId }, status: { $ne: "seen" } },
+    { status: "seen", isRead: true, readAt: new Date() },
   );
   if (chat.founderId && chat.founderId.toString() === userId.toString()) {
     chat.unreadCount.founder = 0;
@@ -329,6 +505,10 @@ module.exports = {
   listChats,
   getMessages,
   sendMessage,
+  editMessage,
+  deleteMessage,
+  searchMessages,
+  getChatMedia,
   markRead,
   deleteChat,
 };
