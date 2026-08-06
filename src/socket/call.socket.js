@@ -165,4 +165,15 @@ module.exports = (io, socket) => {
       });
     }
   });
+
+  socket.on("media_state_change", ({ targetId, muted, cameraOff, isScreenSharing }) => {
+    if (targetId) {
+      io.to(targetId.toString()).emit("media_state_change", {
+        from: socket.userId,
+        muted,
+        cameraOff,
+        isScreenSharing,
+      });
+    }
+  });
 };
