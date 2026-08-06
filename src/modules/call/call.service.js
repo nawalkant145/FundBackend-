@@ -24,9 +24,12 @@ const ICE_SERVERS = () => {
   return servers;
 };
 
-const initiateCall = async (callerId, { receiverId, type }) => {
-  if (!receiverId || !["audio", "video"].includes(type)) {
-    throw new ApiError(400, "receiverId and valid type required");
+const initiateCall = async (callerId, { receiverId, callType, type }) => {
+  const finalCallType = callType || type || "voice";
+  const normalizedType = finalCallType === "audio" ? "voice" : finalCallType;
+
+  if (!receiverId || !["voice", "video", "audio"].includes(finalCallType)) {
+    throw new ApiError(400, "receiverId and valid callType required");
   }
   if (callerId.toString() === receiverId.toString()) {
     throw new ApiError(400, "Cannot call yourself");
@@ -37,8 +40,6 @@ const initiateCall = async (callerId, { receiverId, type }) => {
   if (caller.verificationLevel < 2 || receiver.verificationLevel < 2) {
     throw new ApiError(403, "Both users must be phone-verified to call");
   }
-  // Investors must be on an active Pro subscription to start calls.
-  // Founders can call freely.
   if (caller.role === "investor" && !caller.isProActive()) {
     throw new ApiError(
       403,
@@ -46,13 +47,11 @@ const initiateCall = async (callerId, { receiverId, type }) => {
     );
   }
 
-  // Must have an active chat
   const chat = await Chat.findOne({
     participants: { $all: [callerId, receiverId] },
   });
   if (!chat) throw new ApiError(403, "Start a chat first before calling");
 
-  // Already in active call?
   const active = await Call.findOne({
     $or: [
       { callerId, status: { $in: ["initiated", "ringing", "accepted"] } },
@@ -74,7 +73,8 @@ const initiateCall = async (callerId, { receiverId, type }) => {
     callerId,
     receiverId,
     chatId: chat._id,
-    type,
+    callType: normalizedType,
+    type: normalizedType,
     channelName,
     status: "ringing",
   });
@@ -102,7 +102,7 @@ const decline = async (callId, userId) => {
   if (call.receiverId.toString() !== userId.toString()) {
     throw new ApiError(403, "Only receiver can decline");
   }
-  call.status = "declined";
+  call.status = "rejected";
   call.endedAt = new Date();
   await call.save();
   return call;
@@ -116,10 +116,10 @@ const end = async (callId, userId) => {
     call.receiverId.toString() === userId.toString();
   if (!isParticipant) throw new ApiError(403, "Not a participant");
 
-  if (["ended", "declined", "missed", "no_answer"].includes(call.status)) {
+  if (["ended", "completed", "declined", "rejected", "missed", "no_answer", "cancelled"].includes(call.status)) {
     return call;
   }
-  call.status = "ended";
+  call.status = call.answeredAt ? "completed" : "ended";
   call.endedAt = new Date();
   call.endedBy = userId;
   if (call.answeredAt) {
@@ -133,42 +133,121 @@ const markMissed = async (callId) => {
   const call = await Call.findById(callId);
   if (!call) return null;
   if (call.status === "ringing" || call.status === "initiated") {
-    call.status = "no_answer";
+    call.status = "missed";
     call.endedAt = new Date();
     await call.save();
   }
   return call;
 };
 
-const history = async (userId, { limit = 30, cursor } = {}) => {
+const history = async (userId, { filter = "all", query = "", limit = 30, cursor } = {}) => {
   limit = Math.min(Number(limit) || 30, 100);
-  const q = {
+
+  const baseUserQuery = {
     $or: [{ callerId: userId }, { receiverId: userId }],
   };
-  if (cursor) q._id = { $lt: cursor };
-  const calls = await Call.find(q)
+
+  const andConditions = [baseUserQuery];
+
+  if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
+    andConditions.push({ _id: { $lt: cursor } });
+  }
+
+  if (filter === "missed" || filter === "unread") {
+    andConditions.push({ status: { $in: ["missed", "no_answer", "rejected", "declined"] } });
+  } else if (filter === "voice") {
+    andConditions.push({
+      $or: [
+        { callType: { $in: ["voice", "audio"] } },
+        { type: { $in: ["voice", "audio"] } },
+      ],
+    });
+  } else if (filter === "video") {
+    andConditions.push({
+      $or: [{ callType: "video" }, { type: "video" }],
+    });
+  } else if (filter === "completed") {
+    andConditions.push({ status: { $in: ["completed", "ended", "accepted"] } });
+  } else if (filter === "today") {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    andConditions.push({ createdAt: { $gte: startOfDay } });
+  } else if (filter === "yesterday") {
+    const startOfYesterday = new Date();
+    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+    startOfYesterday.setHours(0, 0, 0, 0);
+    const endOfYesterday = new Date();
+    endOfYesterday.setDate(endOfYesterday.getDate() - 1);
+    endOfYesterday.setHours(23, 59, 59, 999);
+    andConditions.push({ createdAt: { $gte: startOfYesterday, $lte: endOfYesterday } });
+  }
+
+  const q = { $and: andConditions };
+
+  const rawCalls = await Call.find(q)
     .sort({ _id: -1 })
     .limit(limit + 1)
-    .populate("callerId", "name avatar")
-    .populate("receiverId", "name avatar")
+    .populate("callerId", "name username avatar companyName isVerified verificationLevel")
+    .populate("receiverId", "name username avatar companyName isVerified verificationLevel")
     .lean();
-  const hasMore = calls.length > limit;
-  return {
-    calls: hasMore ? calls.slice(0, limit) : calls,
-    nextCursor: hasMore ? calls[limit - 1]._id : null,
-    hasMore,
-  };
+
+  const hasMore = rawCalls.length > limit;
+  let items = hasMore ? rawCalls.slice(0, limit) : rawCalls;
+
+  // Compute direction dynamically & format object
+  items = items.map((c) => {
+    const callerIdStr = c.callerId?._id ? c.callerId._id.toString() : c.callerId?.toString();
+    const isCaller = callerIdStr === userId.toString();
+    const otherUser = isCaller ? c.receiverId : c.callerId;
+    const direction = isCaller ? "outgoing" : "incoming";
+    const normCallType = c.callType || c.type || "voice";
+    return {
+      _id: c._id,
+      callerId: c.callerId,
+      receiverId: c.receiverId,
+      chatId: c.chatId,
+      callType: normCallType === "audio" ? "voice" : normCallType,
+      direction,
+      status: c.status,
+      duration: c.duration || 0,
+      channelName: c.channelName,
+      startedAt: c.startedAt || c.createdAt,
+      endedAt: c.endedAt,
+      createdAt: c.createdAt,
+      otherUser,
+    };
+  });
+
+  // Client-side text query search filtering on populated caller/receiver name
+  if (query && typeof query === "string" && query.trim().length > 0) {
+    const lowerQ = query.toLowerCase().trim();
+    items = items.filter(
+      (c) =>
+        c.otherUser?.name?.toLowerCase().includes(lowerQ) ||
+        c.otherUser?.username?.toLowerCase().includes(lowerQ),
+    );
+  }
+
+  const nextCursor = hasMore ? rawCalls[limit - 1]._id : null;
+  return { calls: items, nextCursor, hasMore };
 };
 
 const getById = async (callId, userId) => {
   const call = await Call.findById(callId)
-    .populate("callerId", "name avatar")
-    .populate("receiverId", "name avatar");
+    .populate("callerId", "name username avatar companyName isVerified verificationLevel")
+    .populate("receiverId", "name username avatar companyName isVerified verificationLevel")
+    .lean();
   if (!call) throw new ApiError(404, "Call not found");
   const isParticipant =
     call.callerId._id.toString() === userId.toString() ||
     call.receiverId._id.toString() === userId.toString();
   if (!isParticipant) throw new ApiError(403, "Not a participant");
+
+  const isCaller = call.callerId._id.toString() === userId.toString();
+  call.direction = isCaller ? "outgoing" : "incoming";
+  call.callType = call.callType || call.type || "voice";
+  call.otherUser = isCaller ? call.receiverId : call.callerId;
+
   return call;
 };
 
