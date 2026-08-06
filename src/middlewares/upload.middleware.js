@@ -33,6 +33,24 @@ const documentFilter = (req, file, cb) => {
   }
 };
 
+const courseMediaFilter = (req, file, cb) => {
+  if (file.fieldname === "thumbnail") {
+    if (/^image\/(jpeg|png|jpg|webp)$/.test(file.mimetype)) cb(null, true);
+    else cb(new ApiError(400, "Thumbnail must be a JPEG, PNG, or WEBP image"));
+  } else if (file.fieldname === "previewVideo" || file.fieldname === "video") {
+    if (/^video\/(mp4|quicktime|webm|x-matroska)$/.test(file.mimetype)) cb(null, true);
+    else cb(new ApiError(400, "Video must be an MP4, MOV, or WEBM file"));
+  } else if (file.fieldname === "document") {
+    if (/^(image\/(jpeg|png|jpg|webp)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document))$/.test(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new ApiError(400, "Document must be a PDF, DOC, DOCX, or Image"));
+    }
+  } else {
+    cb(null, true);
+  }
+};
+
 const uploadImage = multer({
   storage,
   fileFilter: imageFilter,
@@ -51,4 +69,16 @@ const uploadDocument = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
-module.exports = { uploadImage, uploadVideo, uploadDocument, TMP_DIR };
+const uploadCourseMedia = multer({
+  storage,
+  fileFilter: courseMediaFilter,
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
+});
+
+module.exports = {
+  uploadImage,
+  uploadVideo,
+  uploadDocument,
+  uploadCourseMedia,
+  TMP_DIR,
+};

@@ -1,6 +1,7 @@
 const { sendEmail } = require("../../utils/sendEmail");
-const { ApiResponse } = require("../../utils/ApiResponse");
+const ApiResponse = require("../../utils/ApiResponse");
 const asyncHandler = require("../../utils/asyncHandler");
+const courseService = require("./course.service");
 
 const receiptEmailHtml = ({ name, courseTitle, price, paymentMethod, transactionId, date }) => `
 <!DOCTYPE html>
@@ -142,4 +143,93 @@ const sendCourseReceipt = asyncHandler(async (req, res) => {
   );
 });
 
-module.exports = { sendCourseReceipt };
+// Create Course (Founder only)
+const createCourse = asyncHandler(async (req, res) => {
+  const course = await courseService.createCourse(
+    req.user._id,
+    req.body,
+    req.files || {}
+  );
+  res.status(201).json(new ApiResponse(201, { course }, "Course created successfully"));
+});
+
+// Get logged-in Founder's courses
+const getMyCourses = asyncHandler(async (req, res) => {
+  const result = await courseService.getFounderCourses(req.user._id, req.query);
+  res.status(200).json(new ApiResponse(200, result, "Founder courses retrieved"));
+});
+
+// Update Course (Founder only)
+const updateCourse = asyncHandler(async (req, res) => {
+  const course = await courseService.updateCourse(
+    req.params.id,
+    req.user._id,
+    req.body,
+    req.files || {}
+  );
+  res.status(200).json(new ApiResponse(200, { course }, "Course updated successfully"));
+});
+
+// Delete Course (Founder only)
+const deleteCourse = asyncHandler(async (req, res) => {
+  const result = await courseService.deleteCourse(req.params.id, req.user._id);
+  res.status(200).json(new ApiResponse(200, result, "Course deleted successfully"));
+});
+
+// Add Lesson to Course (Founder only)
+const addLesson = asyncHandler(async (req, res) => {
+  const course = await courseService.addLesson(
+    req.params.id,
+    req.user._id,
+    req.body,
+    req.files || {}
+  );
+  res.status(200).json(new ApiResponse(200, { course }, "Lesson added successfully"));
+});
+
+// Update Lesson in Course (Founder only)
+const updateLesson = asyncHandler(async (req, res) => {
+  const course = await courseService.updateLesson(
+    req.params.id,
+    req.user._id,
+    req.params.lessonId,
+    req.body,
+    req.files || {}
+  );
+  res.status(200).json(new ApiResponse(200, { course }, "Lesson updated successfully"));
+});
+
+// Delete Lesson from Course (Founder only)
+const deleteLesson = asyncHandler(async (req, res) => {
+  const course = await courseService.deleteLesson(
+    req.params.id,
+    req.user._id,
+    req.params.lessonId
+  );
+  res.status(200).json(new ApiResponse(200, { course }, "Lesson deleted successfully"));
+});
+
+// Get Published Courses (Public / All Users)
+const getPublishedCourses = asyncHandler(async (req, res) => {
+  const result = await courseService.getPublishedCourses(req.query);
+  res.status(200).json(new ApiResponse(200, result, "Published courses retrieved"));
+});
+
+// Get Course Details by ID
+const getCourseById = asyncHandler(async (req, res) => {
+  const course = await courseService.getCourseById(req.params.id, req.user);
+  res.status(200).json(new ApiResponse(200, { course }, "Course details fetched"));
+});
+
+module.exports = {
+  sendCourseReceipt,
+  createCourse,
+  getMyCourses,
+  updateCourse,
+  deleteCourse,
+  addLesson,
+  updateLesson,
+  deleteLesson,
+  getPublishedCourses,
+  getCourseById,
+};
