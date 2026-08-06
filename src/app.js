@@ -66,10 +66,16 @@ app.post(
   investmentController.webhook,
 );
 
+const path = require("path");
+const fs = require("fs");
+const UPLOADS_DIR = path.join(process.cwd(), "tmp", "uploads");
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
 // ─── Body & Cookies ────────────────────────────
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser(process.env.COOKIE_SECRET));
+app.use("/uploads", express.static(UPLOADS_DIR));
 
 // ─── Hardening ─────────────────────────────────
 app.use(mongoSanitize());

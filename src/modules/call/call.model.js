@@ -14,17 +14,26 @@ const callSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    chatId: { type: mongoose.Schema.Types.ObjectId, ref: "Chat" },
-    type: { type: String, enum: ["audio", "video"], required: true },
+    chatId: { type: mongoose.Schema.Types.ObjectId, ref: "Chat", index: true },
+    callType: {
+      type: String,
+      enum: ["voice", "video", "audio"],
+      default: "voice",
+    },
+    type: { type: String, enum: ["audio", "video", "voice"], default: "voice" }, // Alias
     status: {
       type: String,
       enum: [
         "initiated",
         "ringing",
         "accepted",
+        "completed",
         "declined",
+        "rejected",
         "ended",
         "missed",
+        "cancelled",
+        "busy",
         "no_answer",
       ],
       default: "initiated",

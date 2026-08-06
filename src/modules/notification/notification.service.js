@@ -2,7 +2,6 @@ const Notification = require("./notification.model");
 const User = require("../user/user.model");
 const ApiError = require("../../utils/ApiError");
 const { getAdmin } = require("../../config/firebase");
-const { getIO } = require("../../socket");
 
 // Push via FCM if configured
 const pushFCM = async (fcmToken, { title, body, data = {} }) => {
@@ -49,6 +48,7 @@ const send = async (userId, payload) => {
 
   // Realtime via Socket.io
   try {
+    const { getIO } = require("../../socket");
     const io = getIO();
     if (io) io.to(userId.toString()).emit("notification", notif);
   } catch {}
