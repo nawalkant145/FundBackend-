@@ -52,26 +52,31 @@ const initiateCall = async (callerId, { receiverId, callType, type }) => {
     );
   }
 
-  const chat = await Chat.findOne({
-    participants: { $all: [callerId, receiverId] },
-  });
-  if (!chat) throw new ApiError(403, "Start a chat first before calling");
+  // Auto-cleanup stale calls older than 60s or previous calls between the same 2 users
+  const staleCutoff = new Date(Date.now() - 60 * 1000);
+  await Call.updateMany(
+    {
+      $or: [
+        { callerId, status: { $in: ["initiated", "ringing", "accepted"] } },
+        { receiverId: callerId, status: { $in: ["initiated", "ringing", "accepted"] } },
+        { callerId: receiverId, status: { $in: ["initiated", "ringing", "accepted"] } },
+        { receiverId, status: { $in: ["initiated", "ringing", "accepted"] } },
+      ],
+      createdAt: { $lt: staleCutoff },
+    },
+    { $set: { status: "ended", endedAt: new Date() } }
+  );
 
-  const active = await Call.findOne({
-    $or: [
-      { callerId, status: { $in: ["initiated", "ringing", "accepted"] } },
-      {
-        receiverId: callerId,
-        status: { $in: ["initiated", "ringing", "accepted"] },
-      },
-      {
-        callerId: receiverId,
-        status: { $in: ["initiated", "ringing", "accepted"] },
-      },
-      { receiverId, status: { $in: ["initiated", "ringing", "accepted"] } },
-    ],
-  });
-  if (active) throw new ApiError(409, "One of the users is already on a call");
+  // Auto-close any prior call specifically between callerId and receiverId
+  await Call.updateMany(
+    {
+      $or: [
+        { callerId, receiverId, status: { $in: ["initiated", "ringing", "accepted"] } },
+        { callerId: receiverId, receiverId: callerId, status: { $in: ["initiated", "ringing", "accepted"] } },
+      ],
+    },
+    { $set: { status: "ended", endedAt: new Date() } }
+  );
 
   const channelName = `call_${Date.now()}_${uuidv4().slice(0, 8)}`;
   const call = await Call.create({
