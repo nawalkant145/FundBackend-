@@ -5,7 +5,7 @@
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
-    "build": "rimraf dist && copyfiles -u 1 \"src/**/*\" server.js package.json .env.example README.md dist",
+    "build": "rimraf dist && copyfiles server.js package.json .env.example README.md dist && copyfiles \"src/**/*\" dist",
     "start": "node server.js",
     "dev": "nodemon server.js",
     "seed": "node scripts/seedMockData.js"

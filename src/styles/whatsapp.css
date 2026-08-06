@@ -3,10 +3,11 @@
   --wa-primary: #00a884;
   --wa-primary-dark: #075e54;
   --wa-accent: #128c7e;
-  --wa-bg-main: #f0f2f5;
+  --wa-bg-main: #f3f2ef;
+  --feed-bg: #f3f2ef;
   --wa-sidebar-bg: #ffffff;
   --wa-chat-bg: #efeae2;
-  --wa-header-bg: #f0f2f5;
+  --wa-header-bg: #f3f2ef;
   --wa-border: #e9edef;
   
   --wa-bubble-sender: #d9fdd3;
@@ -53,6 +54,14 @@ body {
   width: 100vw;
   height: 100vh;
   background-color: var(--wa-bg-main);
+}
+
+.feed-container,
+.feed-layout,
+.feed-wrapper,
+.wa-feed-bg,
+.app-feed {
+  background-color: var(--feed-bg, #f3f2ef);
 }
 
 .wa-app-layout {

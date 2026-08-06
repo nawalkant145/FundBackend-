@@ -7,22 +7,22 @@ const { uploadImage } = require("../../middlewares/upload.middleware");
 
 router.use(authenticate);
 
-// Create post with images (founder only, up to 10 images)
+// Create post with images (founder and investor, up to 10 images)
 router.post(
   "/",
-  authorize("founder"),
+  authorize("founder", "investor"),
   uploadImage.array("images", 10),
   c.create,
 );
 
 // Create text-only (thoughts) post — no image upload allowed
-router.post("/thoughts", authorize("founder"), c.createThoughts);
+router.post("/thoughts", authorize("founder", "investor"), c.createThoughts);
 
 // Feed (all authenticated users)
 router.get("/feed", c.feed);
 
-// My posts (founder)
-router.get("/my-posts", authorize("founder"), c.myPosts);
+// My posts (founder and investor)
+router.get("/my-posts", authorize("founder", "investor"), c.myPosts);
 
 // Saved posts (all authenticated users)
 router.get("/saved", c.savedPosts);
@@ -32,8 +32,8 @@ router.get("/user/:userId", c.userPosts);
 
 // Single post CRUD
 router.get("/:id", c.getOne);
-router.put("/:id", authorize("founder"), c.update);
-router.delete("/:id", authorize("founder"), c.remove);
+router.put("/:id", authorize("founder", "investor"), c.update);
+router.delete("/:id", authorize("founder", "investor"), c.remove);
 
 // Engagement
 router.post("/:id/like", c.like);

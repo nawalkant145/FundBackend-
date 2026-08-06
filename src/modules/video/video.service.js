@@ -16,7 +16,7 @@ const {
 } = require("../../utils/engagement");
 
 
-const MIN_DURATION = 60;
+const MIN_DURATION = 10;
 const MAX_DURATION = 120;
 const MAX_TOTAL_PITCHES = 3;
 const PITCH_EXPIRY_DAYS = 30;
