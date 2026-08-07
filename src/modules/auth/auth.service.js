@@ -18,12 +18,14 @@ const PASSWORD_RESET_EXPIRY_MS = 30 * 60 * 1000;
 const hashRefresh = (token) =>
   crypto.createHash("sha256").update(token).digest("hex");
 
-const issueTokens = async (user) => {
+const issueTokens = async (user, { save = true } = {}) => {
   const payload = { _id: user._id.toString(), role: user.role };
   const accessToken = generateAccessToken(payload);
   const refreshToken = generateRefreshToken(payload);
   user.refreshToken = hashRefresh(refreshToken); // store hash, not raw
-  await user.save({ validateBeforeSave: false });
+  if (save) {
+    await user.save({ validateBeforeSave: false });
+  }
   return { accessToken, refreshToken };
 };
 
@@ -153,7 +155,8 @@ const checkAvailability = async ({ username, email, phone }) => {
   return result;
 };
 
-const loginUser = async ({ identifier, email, password, role }) => {
+const loginUser = async ({ identifier, email, password, role, clientInfo }) => {
+  const tTotalStart = performance.now();
   const raw = (identifier || email || "").trim();
   let query;
   if (raw.includes("@")) {
@@ -166,7 +169,10 @@ const loginUser = async ({ identifier, email, password, role }) => {
     query = { username: raw.toLowerCase() };
   }
 
+  const tDbReadStart = performance.now();
   const user = await User.findOne(query).select("+password +refreshToken");
+  const dbReadMs = performance.now() - tDbReadStart;
+
   if (!user) throw new ApiError(401, "Invalid credentials");
   if (user.isBanned) throw new ApiError(403, "Your account has been banned");
   if (user.suspendedUntil && user.suspendedUntil > new Date()) {
@@ -178,8 +184,6 @@ const loginUser = async ({ identifier, email, password, role }) => {
   }
   if (!user.isActive) throw new ApiError(403, "Your account is inactive");
 
-  // BUG-05 FIX: Compare two Date objects (not Date vs number) to be
-  // explicit and consistent with the suspendedUntil check above.
   if (user.lockUntil && user.lockUntil > new Date()) {
     const minutesLeft = Math.ceil(
       (user.lockUntil.getTime() - Date.now()) / 60000,
@@ -187,7 +191,10 @@ const loginUser = async ({ identifier, email, password, role }) => {
     throw new ApiError(429, `Account locked. Try again in ${minutesLeft} min.`);
   }
 
+  const tPassStart = performance.now();
   const ok = await user.comparePassword(password);
+  const passMs = performance.now() - tPassStart;
+
   if (!ok) {
     user.loginAttempts = (user.loginAttempts || 0) + 1;
     if (user.loginAttempts >= MAX_LOGIN_ATTEMPTS) {
@@ -216,13 +223,27 @@ const loginUser = async ({ identifier, email, password, role }) => {
     }
   }
 
+  const tSaveStart = performance.now();
+  // Consolidate memory updates before executing a single DB save operation
   user.loginAttempts = 0;
   user.lockUntil = undefined;
   user.lastSeen = new Date();
   user.isOnline = true;
-  await user.save({ validateBeforeSave: false });
+  if (clientInfo) {
+    if (clientInfo.ip) user.lastLoginIp = clientInfo.ip;
+    if (clientInfo.userAgent) user.lastLoginUserAgent = clientInfo.userAgent;
+    user.lastLoginAt = new Date();
+  }
 
-  const tokens = await issueTokens(user);
+  const tokens = await issueTokens(user, { save: false });
+  await user.save({ validateBeforeSave: false });
+  const saveMs = performance.now() - tSaveStart;
+
+  const totalMs = performance.now() - tTotalStart;
+  console.log(
+    `⚡ [AUTH PROFILE] DB Read: ${dbReadMs.toFixed(1)}ms | Password Compare: ${passMs.toFixed(1)}ms | Token & DB Save: ${saveMs.toFixed(1)}ms | Total: ${totalMs.toFixed(1)}ms`
+  );
+
   return { user: user.toSafeJSON(), ...tokens };
 };
 
