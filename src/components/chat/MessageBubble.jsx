@@ -180,6 +180,7 @@ export const MessageBubble = ({
   const [showMenu, setShowMenu] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.message || message.text || "");
+  const [isStarred, setIsStarred] = useState(message.isStarred || false);
 
   const senderId = message.senderId?._id || message.senderId;
   const isSender = senderId?.toString() === (currentUser._id || currentUser.id)?.toString();
@@ -357,6 +358,15 @@ export const MessageBubble = ({
               <button
                 onClick={() => {
                   setShowMenu(false);
+                  setIsStarred(!isStarred);
+                }}
+              >
+                {isStarred ? "Unstar" : "Star"}
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowMenu(false);
                   alert(`Sent: ${formattedTime}\nStatus: ${message.status || "sent"}\nID: ${message._id}`);
                 }}
               >
@@ -442,6 +452,11 @@ export const MessageBubble = ({
 
         {/* Footer info (Timestamp & Ticks) */}
         <div className="wa-message-meta">
+          {isStarred && (
+            <span style={{ color: "#facc15", fontSize: "12px", marginRight: "3px" }} title="Starred">
+              ★
+            </span>
+          )}
           <span className="wa-message-time">{formattedTime}</span>
           {renderStatusTicks()}
         </div>
