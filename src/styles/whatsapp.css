@@ -1051,3 +1051,145 @@ body {
     display: flex;
   }
 }
+
+/* ── WhatsApp Call Log Card (Screenshot 1) ── */
+.wa-call-log-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  min-width: 220px;
+}
+
+.wa-call-log-icon-circle {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background-color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
+}
+
+.wa-call-log-details {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.wa-call-log-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.wa-call-log-subtitle {
+  font-size: 13px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+/* ── WhatsApp Voice Note Player Card (Screenshot 2) ── */
+.wa-voicenote-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  min-width: 240px;
+  max-width: 320px;
+}
+
+.wa-voicenote-avatar-wrapper {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+}
+
+.wa-voicenote-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.wa-voicenote-mic-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: #00a884;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #ffffff;
+}
+
+.wa-voicenote-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.wa-voicenote-play-btn {
+  background: none;
+  border: none;
+  color: #111827;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wa-voicenote-waveform-container {
+  position: relative;
+  flex: 1;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.wa-voicenote-waveform {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+}
+
+.wa-waveform-bar {
+  flex: 1;
+  background-color: #cbd5e1;
+  border-radius: 1px;
+  transition: background-color 0.1s ease;
+}
+
+.wa-waveform-bar.filled {
+  background-color: #34b7f1;
+}
+
+.wa-voicenote-scrubber-dot {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #34b7f1;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
+.wa-voicenote-time {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 2px;
+}
