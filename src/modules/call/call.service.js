@@ -24,7 +24,7 @@ const ICE_SERVERS = () => {
   return servers;
 };
 
-const initiateCall = async (callerId, { receiverId, callType, type }) => {
+const initiateCall = async (callerId, { receiverId, callType, type, chatId }) => {
   const finalCallType = callType || type || "meeting";
   const normalizedType =
     finalCallType === "meeting" || finalCallType === "video"
@@ -50,6 +50,22 @@ const initiateCall = async (callerId, { receiverId, callType, type }) => {
       403,
       "Calls are a Pro feature. Upgrade to start audio/video calls.",
     );
+  }
+
+  // Find existing chat document if available
+  let chat = null;
+  if (chatId) {
+    chat = await Chat.findById(chatId);
+  }
+  if (!chat) {
+    chat = await Chat.findOne({
+      $or: [
+        { participants: { $all: [callerId, receiverId] } },
+        { founderId: callerId, investorId: receiverId },
+        { founderId: receiverId, investorId: callerId },
+      ],
+      isActive: { $ne: false },
+    });
   }
 
   // Auto-cleanup stale calls older than 60s or previous calls between the same 2 users
@@ -82,7 +98,7 @@ const initiateCall = async (callerId, { receiverId, callType, type }) => {
   const call = await Call.create({
     callerId,
     receiverId,
-    chatId: chat._id,
+    chatId: chat?._id || null,
     callType: normalizedType,
     type: normalizedType,
     channelName,

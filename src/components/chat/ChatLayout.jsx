@@ -48,6 +48,10 @@ export const ChatLayout = ({
     isMuted,
     isVideoOff,
     isSpeakerOn,
+    isScreenSharing,
+    remoteIsScreenSharing,
+    localStream,
+    remoteStream,
     callDuration,
     startCall,
     acceptCall,
@@ -55,6 +59,7 @@ export const ChatLayout = ({
     endCall,
     toggleMute,
     toggleVideo,
+    toggleScreenShare,
     setIsSpeakerOn,
   } = callState;
 
@@ -231,12 +236,17 @@ export const ChatLayout = ({
           isMuted={isMuted}
           isVideoOff={isVideoOff}
           isSpeakerOn={isSpeakerOn}
+          isScreenSharing={isScreenSharing}
+          remoteIsScreenSharing={remoteIsScreenSharing}
+          localStream={localStream}
+          remoteStream={remoteStream}
           onAccept={acceptCall}
           onReject={rejectCall}
           onEnd={endCall}
           onToggleMute={toggleMute}
           onToggleVideo={toggleVideo}
           onToggleSpeaker={() => setIsSpeakerOn(!isSpeakerOn)}
+          onToggleScreenShare={toggleScreenShare}
         />
       )}
     </div>
