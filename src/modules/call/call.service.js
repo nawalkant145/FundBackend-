@@ -1,7 +1,7 @@
 const { v4: uuidv4 } = require("uuid");
 const Call = require("./call.model");
 const User = require("../user/user.model");
-const { Chat } = require("../chat/chat.model");
+const { Chat, Message } = require("../chat/chat.model");
 const ApiError = require("../../utils/ApiError");
 
 const ICE_SERVERS = () => {
@@ -122,6 +122,81 @@ const accept = async (callId, userId) => {
   return { call, iceServers: ICE_SERVERS() };
 };
 
+const createCallChatMessage = async (call, reason) => {
+  try {
+    const { getIO } = require("../../socket");
+    let chatId = call.chatId;
+
+    if (!chatId) {
+      const existingChat = await Chat.findOne({
+        $or: [
+          { participants: { $all: [call.callerId, call.receiverId] } },
+          { founderId: call.callerId, investorId: call.receiverId },
+          { founderId: call.receiverId, investorId: call.callerId },
+        ],
+        isActive: { $ne: false },
+      });
+      if (existingChat) {
+        chatId = existingChat._id;
+      } else {
+        const newChat = await Chat.create({
+          participants: [call.callerId, call.receiverId],
+          founderId: call.callerId,
+          investorId: call.receiverId,
+        });
+        chatId = newChat._id;
+      }
+    }
+
+    const isVideo = call.callType === "video" || call.callType === "meeting" || call.type === "video";
+    const callLabel = isVideo ? "Video call" : "Voice call";
+    const icon = isVideo ? "📹" : "📞";
+
+    let messageText = "";
+    if (reason === "completed" && call.duration > 0) {
+      const mins = Math.floor(call.duration / 60);
+      const secs = call.duration % 60;
+      const durationStr = `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+      messageText = `${icon} ${callLabel} (${durationStr})`;
+    } else if (reason === "declined" || reason === "rejected") {
+      messageText = `${icon} ${callLabel} declined`;
+    } else if (reason === "missed" || reason === "no_answer") {
+      messageText = `${icon} Missed ${callLabel.toLowerCase()}`;
+    } else {
+      messageText = `${icon} ${callLabel} ended`;
+    }
+
+    const msgDoc = await Message.create({
+      chatId,
+      senderId: call.callerId,
+      receiverId: call.receiverId,
+      message: messageText,
+      text: messageText,
+      messageType: "system",
+      type: "system",
+      status: "sent",
+    });
+
+    await Chat.findByIdAndUpdate(chatId, {
+      lastMessage: messageText,
+      lastMessageAt: new Date(),
+    });
+
+    const io = getIO();
+    if (io) {
+      const populatedMsg = await Message.findById(msgDoc._id)
+        .populate("senderId", "name username avatar")
+        .populate("receiverId", "name username avatar")
+        .lean();
+
+      io.to(chatId.toString()).emit("new_message", populatedMsg);
+      io.to(chatId.toString()).emit("receive_message", populatedMsg);
+    }
+  } catch (err) {
+    console.error("Error creating call chat message:", err);
+  }
+};
+
 const decline = async (callId, userId) => {
   const call = await Call.findById(callId);
   if (!call) throw new ApiError(404, "Call not found");
@@ -131,6 +206,9 @@ const decline = async (callId, userId) => {
   call.status = "rejected";
   call.endedAt = new Date();
   await call.save();
+
+  await createCallChatMessage(call, "declined");
+
   return call;
 };
 
@@ -152,6 +230,9 @@ const end = async (callId, userId) => {
     call.duration = Math.floor((call.endedAt - call.answeredAt) / 1000);
   }
   await call.save();
+
+  await createCallChatMessage(call, call.answeredAt ? "completed" : "ended");
+
   return call;
 };
 
@@ -162,6 +243,8 @@ const markMissed = async (callId) => {
     call.status = "missed";
     call.endedAt = new Date();
     await call.save();
+
+    await createCallChatMessage(call, "missed");
   }
   return call;
 };
