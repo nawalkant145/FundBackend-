@@ -3,11 +3,12 @@ const ApiResponse = require("../../utils/ApiResponse");
 const callService = require("./call.service");
 
 const initiate = asyncHandler(async (req, res) => {
-  const { receiverId, callType, type } = req.body;
+  const { receiverId, callType, type, chatId } = req.body;
   const result = await callService.initiateCall(req.user._id, {
     receiverId,
     callType,
     type,
+    chatId,
   });
   res.status(201).json(new ApiResponse(201, result, "Call initiated"));
 });

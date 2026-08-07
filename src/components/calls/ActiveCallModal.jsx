@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 
 export const ActiveCallModal = ({
   incomingCall,
@@ -7,20 +7,40 @@ export const ActiveCallModal = ({
   isMuted,
   isVideoOff,
   isSpeakerOn,
+  isScreenSharing,
+  remoteIsScreenSharing,
+  localStream,
+  remoteStream,
   onAccept,
   onReject,
   onEnd,
   onToggleMute,
   onToggleVideo,
   onToggleSpeaker,
+  onToggleScreenShare,
 }) => {
   const currentCall = incomingCall || activeCall;
-  if (!currentCall) return null;
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
 
   const isIncoming = !!incomingCall;
-  const isVideo = currentCall.callType === "video" || currentCall.type === "video";
-  const name = currentCall.callerName || currentCall.receiverName || "User";
-  const avatar = currentCall.callerAvatar || currentCall.receiverAvatar || "/default-avatar.png";
+  const isVideo = currentCall?.callType === "video" || currentCall?.type === "video" || currentCall?.callType === "meeting";
+  const name = currentCall?.callerName || currentCall?.receiverName || "User";
+  const avatar = currentCall?.callerAvatar || currentCall?.receiverAvatar || "/default-avatar.png";
+
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream]);
+
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStream) {
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+  }, [remoteStream]);
+
+  if (!currentCall) return null;
 
   const formatTimer = (totalSeconds) => {
     const mins = Math.floor(totalSeconds / 60);
@@ -31,11 +51,20 @@ export const ActiveCallModal = ({
   return (
     <div className="wa-call-modal-overlay">
       <div className="wa-call-modal-card">
+        {/* Remote Screen Sharing Badge */}
+        {remoteIsScreenSharing && (
+          <div className="wa-screenshare-badge">
+            🖥️ {name} is sharing screen
+          </div>
+        )}
+
         {/* User Info Header */}
-        <div className="wa-call-user-avatar-container">
-          <img src={avatar} alt={name} className="wa-call-modal-avatar" />
-          <div className="wa-call-pulse-ring"></div>
-        </div>
+        {(!remoteStream || !isVideo) && (
+          <div className="wa-call-user-avatar-container">
+            <img src={avatar} alt={name} className="wa-call-modal-avatar" />
+            <div className="wa-call-pulse-ring"></div>
+          </div>
+        )}
 
         <h3 className="wa-call-modal-name">{name}</h3>
 
@@ -47,15 +76,35 @@ export const ActiveCallModal = ({
             : formatTimer(callDuration)}
         </span>
 
-        {/* Video stream container placeholder */}
+        {/* Live Video Streams (Camera / Screen Share) */}
         {isVideo && !isIncoming && activeCall?.status === "accepted" && (
           <div className="wa-video-stream-container">
             <div className="wa-remote-video">
-              <span>Remote Video Stream</span>
+              {remoteStream ? (
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  playsInline
+                  className="wa-video-element"
+                />
+              ) : (
+                <div className="wa-video-placeholder">
+                  <span>Connecting remote video stream...</span>
+                </div>
+              )}
             </div>
-            <div className="wa-local-video-pip">
-              <span>Local</span>
-            </div>
+
+            {localStream && (
+              <div className="wa-local-video-pip">
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="wa-video-element-pip"
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -81,13 +130,23 @@ export const ActiveCallModal = ({
             </button>
 
             {isVideo && (
-              <button
-                className={`wa-call-control-btn ${isVideoOff ? "active-off" : ""}`}
-                onClick={onToggleVideo}
-                title={isVideoOff ? "Turn Camera On" : "Turn Camera Off"}
-              >
-                {isVideoOff ? "📹 Off" : "📹 Camera"}
-              </button>
+              <>
+                <button
+                  className={`wa-call-control-btn ${isVideoOff ? "active-off" : ""}`}
+                  onClick={onToggleVideo}
+                  title={isVideoOff ? "Turn Camera On" : "Turn Camera Off"}
+                >
+                  {isVideoOff ? "📹 Off" : "📹 Camera"}
+                </button>
+
+                <button
+                  className={`wa-call-control-btn ${isScreenSharing ? "active-sharing" : ""}`}
+                  onClick={onToggleScreenShare}
+                  title={isScreenSharing ? "Stop Screen Share" : "Share Screen"}
+                >
+                  {isScreenSharing ? "🖥️ Stop Share" : "🖥️ Share Screen"}
+                </button>
+              </>
             )}
 
             <button

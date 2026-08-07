@@ -4,7 +4,7 @@ const notif = require("../modules/notification/notification.service");
 const RING_TIMEOUT_MS = 30 * 1000;
 
 module.exports = (io, socket) => {
-  const handleInitiateCall = async ({ receiverId, callType, type }, ack) => {
+  const handleInitiateCall = async ({ receiverId, callType, type, chatId }, ack) => {
     try {
       const finalType = callType || type || "voice";
       const { call, iceServers } = await callService.initiateCall(
@@ -13,6 +13,7 @@ module.exports = (io, socket) => {
           receiverId,
           callType: finalType,
           type: finalType,
+          chatId,
         },
       );
 
