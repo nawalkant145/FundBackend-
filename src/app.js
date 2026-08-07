@@ -50,6 +50,7 @@ app.use(
       return cb(new Error(`CORS blocked: ${origin}`));
     },
     credentials: true,
+    maxAge: 86400, // 24 hours preflight cache
   }),
 );
 

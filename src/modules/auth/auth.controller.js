@@ -137,18 +137,17 @@ const verifyPreRegisterOtp = asyncHandler(async (req, res) => {
 const login = asyncHandler(async (req, res) => {
   validateLogin(req.body);
   const { identifier, email, password, role } = req.body;
-  const result = await authService.loginUser({ identifier, email, password, role });
-
-  // Track login IP + device
-  try {
-    const User = require("../user/user.model");
-    await User.findByIdAndUpdate(result.user._id, {
-      lastLoginIp: req.ip || req.headers["x-forwarded-for"] || "",
-      lastLoginUserAgent: req.headers["user-agent"] || "",
-      lastLoginAt: new Date(),
-      lastSeen: new Date(),
-    });
-  } catch {}
+  const clientInfo = {
+    ip: req.ip || req.headers["x-forwarded-for"] || "",
+    userAgent: req.headers["user-agent"] || "",
+  };
+  const result = await authService.loginUser({
+    identifier,
+    email,
+    password,
+    role,
+    clientInfo,
+  });
 
   setAuthCookies(res, result.accessToken, result.refreshToken);
   res.status(200).json(new ApiResponse(200, result, "Login successful"));

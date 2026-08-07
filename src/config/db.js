@@ -4,6 +4,8 @@ const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
       autoIndex: process.env.NODE_ENV !== "production",
+      maxPoolSize: 20,
+      minPoolSize: 5,
     });
     console.log(`✅ MongoDB connected: ${conn.connection.host}`);
   } catch (error) {
