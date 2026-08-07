@@ -348,10 +348,37 @@ export const useCalls = (currentUser) => {
     }
   };
 
-  const toggleVideo = () => {
-    setIsVideoOff((prev) => !prev);
+  const toggleVideo = async () => {
+    const nextVideoOff = !isVideoOff;
+    setIsVideoOff(nextVideoOff);
+
     if (localStream.current) {
-      localStream.current.getVideoTracks().forEach((t) => (t.enabled = isVideoOff));
+      const track = localStream.current.getVideoTracks()[0];
+      if (track) {
+        track.enabled = !nextVideoOff;
+      }
+
+      if (peerConnection.current && !isScreenSharing) {
+        const videoSender = peerConnection.current
+          .getSenders()
+          .find((s) => s.track?.kind === "video" || (s.track === null && s.kind === "video"));
+        if (videoSender && track) {
+          await videoSender.replaceTrack(!nextVideoOff ? track : null);
+        }
+      }
+
+      setLocalStreamState(new MediaStream(localStream.current.getTracks()));
+    }
+
+    const targetId = activeCall
+      ? activeCall.isOutgoing
+        ? activeCall.receiverId
+        : activeCall.callerId
+      : incomingCall?.callerId;
+
+    if (targetId) {
+      const socket = getSocket();
+      socket?.emit("media_state_change", { targetId, cameraOff: nextVideoOff });
     }
   };
 
