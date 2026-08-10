@@ -3,93 +3,46 @@ const ApiError = require("../../utils/ApiError");
 
 // ─── Shared helpers ────────────────────────────────────────────────────────
 
-/**
- * Country-aware phone number rules.
- * Keys are the full country calling code (with leading '+').
- * Values specify the allowed subscriber (national) digit count range.
- * Codes are matched longest-first so +971 is tried before +97 before +9.
- *
- * Sources: ITU-T E.164 national numbering plans.
- */
-const PHONE_RULES = {
-  // 4-digit codes first (none currently, placeholder for future)
-  // 3-digit codes
-  "+971": { min: 9,  max: 9  }, // UAE
-  "+852": { min: 8,  max: 8  }, // Hong Kong
-  "+853": { min: 8,  max: 8  }, // Macau
-  "+880": { min: 10, max: 10 }, // Bangladesh
-  "+966": { min: 9,  max: 9  }, // Saudi Arabia
-  "+974": { min: 8,  max: 8  }, // Qatar
-  "+973": { min: 8,  max: 8  }, // Bahrain
-  "+968": { min: 8,  max: 8  }, // Oman
-  "+965": { min: 8,  max: 8  }, // Kuwait
-  // 2-digit codes
-  "+91": { min: 10, max: 10 }, // India (strictly 10 subscriber digits)
-  "+44": { min: 10, max: 10 }, // UK
-  "+61": { min: 9,  max: 9  }, // Australia
-  "+65": { min: 8,  max: 8  }, // Singapore
-  "+86": { min: 11, max: 11 }, // China
-  "+49": { min: 10, max: 11 }, // Germany
-  "+33": { min: 9,  max: 9  }, // France
-  "+81": { min: 10, max: 11 }, // Japan
-  "+82": { min: 9,  max: 10 }, // South Korea
-  "+60": { min: 9,  max: 10 }, // Malaysia
-  "+63": { min: 10, max: 10 }, // Philippines
-  "+62": { min: 9,  max: 12 }, // Indonesia
-  "+55": { min: 10, max: 11 }, // Brazil
-  "+27": { min: 9,  max: 9  }, // South Africa
-  "+92": { min: 10, max: 10 }, // Pakistan
-  "+94": { min: 9,  max: 9  }, // Sri Lanka
-  "+20": { min: 10, max: 10 }, // Egypt
-  "+98": { min: 10, max: 10 }, // Iran
-  // 1-digit codes
-  "+1": { min: 10, max: 10 }, // US/Canada
-};
+const { parsePhoneNumber } = require("libphonenumber-js/max");
 
 /**
- * Validates a mobile number in international format (+countryCode + subscriber).
+ * Validates a mobile number using libphonenumber-js across all international countries.
  *
- * Rules:
- *  - International format (leading '+') is REQUIRED.
- *  - Strips whitespace, dashes, and parentheses before parsing.
- *  - Validates subscriber digit count against per-country rules.
- *  - Unknown country codes are accepted with a permissive 7–12 digit fallback
- *    so unlisted countries are not permanently blocked.
- *  - Returns false for local-only numbers (no '+') — callers should prompt
- *    the user to use the full international format.
+ * @param {string} phone Raw or normalized phone number string
+ * @param {string} [defaultCountry="IN"] Default ISO 3166-1 alpha-2 country code
+ * @returns {boolean} True if phone is valid and possible for the country, false otherwise.
  */
-const isValidPhone = (phone) => {
+const isValidPhone = (phone, defaultCountry = "IN") => {
   if (!phone || typeof phone !== "string") return false;
+  const trimmed = phone.trim();
+  if (!trimmed) return false;
 
-  // Strip common formatting characters
-  const cleaned = phone.replace(/[\s\-()\u00A0]/g, "");
+  try {
+    const countryCode =
+      defaultCountry && typeof defaultCountry === "string"
+        ? defaultCountry.toUpperCase().trim()
+        : "IN";
+    const phoneNumber = trimmed.startsWith("+")
+      ? parsePhoneNumber(trimmed)
+      : parsePhoneNumber(trimmed, countryCode);
 
-  if (!cleaned.startsWith("+")) {
-    // Local numbers are not accepted; international format is required.
+    if (!phoneNumber || !phoneNumber.isValid()) return false;
+
+    // For India, enforce mobile number prefixes (must start with 6-9)
+    if (phoneNumber.country === "IN") {
+      const type = phoneNumber.getType();
+      if (type && type !== "MOBILE" && type !== "FIXED_LINE_OR_MOBILE") {
+        return false;
+      }
+      if (/^[0-5]/.test(phoneNumber.nationalNumber)) {
+        return false;
+      }
+    }
+
+    return true;
+  } catch (err) {
     return false;
   }
-
-  // Try to match the longest known country code first (4 → 3 → 2 → 1 digit)
-  const digits = cleaned.slice(1); // everything after '+'
-  const lengths = [4, 3, 2, 1];
-
-  for (const len of lengths) {
-    const code = "+" + digits.slice(0, len);
-    if (PHONE_RULES[code]) {
-      const subscriber = digits.slice(len);
-      const { min, max } = PHONE_RULES[code];
-      // Subscriber must be purely numeric, correct length, and non-empty
-      if (!/^\d+$/.test(subscriber)) return false;
-      return subscriber.length >= min && subscriber.length <= max;
-    }
-  }
-
-  // Unknown country code — apply a permissive fallback (7–12 subscriber digits)
-  // so users from unlisted countries are not blocked.
-  const allDigits = digits;
-  if (!/^\d+$/.test(allDigits)) return false;
-  // At minimum we need 1 country-code digit + 7 subscriber digits
-  return allDigits.length >= 8 && allDigits.length <= 15;
 };
 
 /**
@@ -177,15 +130,13 @@ const validateRegister = (data) => {
     errors.push("Role must be founder or investor");
   }
 
-  // Phone — required at registration; must be in international format
-  const normalizedPhone = normalizePhone(String(phone || ""));
+  // Phone — required at registration; must be in valid format for country
+  const defaultCountry = data.country || "IN";
+  const normalizedPhone = normalizePhone(String(phone || ""), defaultCountry);
   if (!phone || phone === "") {
     errors.push("Phone number is required");
-  } else if (!isValidPhone(normalizedPhone)) {
-    errors.push(
-      "Phone number must be a valid 10-digit mobile number for India (e.g. +919876543210 or 9876543210) " +
-      "or valid international format for other countries.",
-    );
+  } else if (!normalizedPhone || !isValidPhone(phone, defaultCountry)) {
+    errors.push("Please enter a valid phone number for the selected country.");
   } else {
     data.phone = normalizedPhone;
   }
@@ -262,14 +213,12 @@ const validateVerifyEmailOtp = (data) => {
 
 const validateSendPhoneOtp = (data) => {
   const errors = [];
-  const { phone } = data;
-  const normalizedPhone = normalizePhone(String(phone || ""));
+  const { phone, country } = data;
+  const defaultCountry = country || "IN";
+  const normalizedPhone = normalizePhone(String(phone || ""), defaultCountry);
 
-  if (!phone || !isValidPhone(normalizedPhone)) {
-    errors.push(
-      "A valid 10-digit mobile number for India (e.g. +919876543210 or 9876543210) " +
-      "or valid international format for other countries is required.",
-    );
+  if (!phone || !normalizedPhone || !isValidPhone(phone, defaultCountry)) {
+    errors.push("Please enter a valid phone number for the selected country.");
   } else {
     data.phone = normalizedPhone;
   }
@@ -347,29 +296,36 @@ const validateChangePassword = (data) => {
 
 // ─── Exports ───────────────────────────────────────────────────────────────
 
-const normalizePhone = (phone) => {
-  if (!phone || typeof phone !== "string") return "";
-  let cleaned = phone.replace(/[\s\-()\u00A0]/g, "");
+/**
+ * Normalizes a phone number into canonical E.164 format (+<country><national>).
+ *
+ * @param {string} phone Raw phone number string
+ * @param {string} [defaultCountry="IN"] Default ISO 3166-1 alpha-2 country code
+ * @returns {string|null} E.164 format string if valid, otherwise null.
+ */
+const normalizePhone = (phone, defaultCountry = "IN") => {
+  if (!phone || typeof phone !== "string") return null;
+  const trimmed = phone.trim();
+  if (!trimmed) return null;
 
-  if (cleaned.startsWith("+91")) {
-    let digits = cleaned.slice(3).replace(/^0+/, "");
-    if (digits.length > 10) digits = digits.slice(0, 10);
-    return "+91" + digits;
+  if (!isValidPhone(trimmed, defaultCountry)) return null;
+
+  try {
+    const countryCode =
+      defaultCountry && typeof defaultCountry === "string"
+        ? defaultCountry.toUpperCase().trim()
+        : "IN";
+    const phoneNumber = trimmed.startsWith("+")
+      ? parsePhoneNumber(trimmed)
+      : parsePhoneNumber(trimmed, countryCode);
+
+    if (phoneNumber && phoneNumber.isValid()) {
+      return phoneNumber.format("E.164");
+    }
+    return null;
+  } catch (err) {
+    return null;
   }
-
-  if (/^\d{10}$/.test(cleaned)) {
-    return "+91" + cleaned;
-  }
-
-  if (/^0\d{10}$/.test(cleaned)) {
-    return "+91" + cleaned.slice(1);
-  }
-
-  if (/^91\d{10}$/.test(cleaned)) {
-    return "+" + cleaned;
-  }
-
-  return cleaned;
 };
 
 module.exports = {

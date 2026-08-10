@@ -48,14 +48,15 @@ const userSchema = new mongoose.Schema(
       index: true,
       set: function (v) {
         if (!v) return "";
-        return require("../auth/auth.validation").normalizePhone(v);
+        const normalized = require("../auth/auth.validation").normalizePhone(v, this.country);
+        return normalized || v;
       },
       validate: {
         validator: function (v) {
           if (!v) return true; // optional in schema
-          return require("../auth/auth.validation").isValidPhone(v);
+          return require("../auth/auth.validation").isValidPhone(v, this.country);
         },
-        message: "Please enter a valid phone number",
+        message: "Please enter a valid phone number for the selected country.",
       },
     },
     country: { type: String, default: "" },
@@ -321,7 +322,8 @@ userSchema.methods.isProActive = function () {
 userSchema.pre("validate", function (next) {
   if (this.phone) {
     const { normalizePhone } = require("../auth/auth.validation");
-    this.phone = normalizePhone(this.phone);
+    const normalized = normalizePhone(this.phone, this.country);
+    if (normalized) this.phone = normalized;
   }
   next();
 });
