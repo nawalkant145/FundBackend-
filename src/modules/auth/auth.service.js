@@ -82,7 +82,8 @@ const registerUser = async ({
 
   let normalizedPhone = "";
   if (phone) {
-    normalizedPhone = phone.replace(/[\s\-()]/g, "");
+    const { normalizePhone } = require("./auth.validation");
+    normalizedPhone = normalizePhone(phone, country) || phone.replace(/[\s\-()]/g, "");
     if (await User.findOne({ phone: normalizedPhone })) {
       throw new ApiError(409, "Phone already registered", {
         field: "phone",
@@ -123,8 +124,8 @@ const registerUser = async ({
 };
 
 // Check whether a username / email / phone is already taken.
-const checkAvailability = async ({ username, email, phone }) => {
-  const { isValidEmail, isValidPhone } = require("./auth.validation");
+const checkAvailability = async ({ username, email, phone, country }) => {
+  const { isValidEmail, isValidPhone, normalizePhone } = require("./auth.validation");
   const result = {};
   if (username) {
     const u = username.toLowerCase().trim();
@@ -144,10 +145,10 @@ const checkAvailability = async ({ username, email, phone }) => {
   }
   if (phone) {
     const p = phone.trim();
-    if (!isValidPhone(p)) {
-      throw new ApiError(400, "Invalid phone number format. Base mobile number must be exactly 10 digits.");
+    if (!isValidPhone(p, country)) {
+      throw new ApiError(400, "Please enter a valid phone number for the selected country.");
     }
-    const normalizedPhone = p.replace(/[\s\-()]/g, "");
+    const normalizedPhone = normalizePhone(p, country) || p.replace(/[\s\-()]/g, "");
     result.phone = (await User.findOne({ phone: normalizedPhone }))
       ? "taken"
       : "available";
@@ -162,8 +163,8 @@ const loginUser = async ({ identifier, email, password, role, clientInfo }) => {
   if (raw.includes("@")) {
     query = { email: raw.toLowerCase() };
   } else if (/^\+?\d[\d\s\-()\u00A0]{5,}$/.test(raw)) {
-    // Normalize before querying: strip spaces, dashes, parentheses
-    const normalizedPhone = raw.replace(/[\s\-()\u00A0]/g, "");
+    const { normalizePhone } = require("./auth.validation");
+    const normalizedPhone = normalizePhone(raw) || raw.replace(/[\s\-()\u00A0]/g, "");
     query = { phone: normalizedPhone };
   } else {
     query = { username: raw.toLowerCase() };
@@ -322,7 +323,7 @@ const verifyPreRegisterOtp = async (email, otp) => {
   const { getClient } = require("../../config/redis");
   const redis = getClient();
   const raw = await redis.get(`preregister:${email}`);
-  if (!raw) throw new ApiError(400, "No OTP requested or expired");
+  if (!raw) throw new ApiError(400, "Verification code expired or not requested. Please click 'Resend Code'.");
 
   const { otpHash, expires } = JSON.parse(raw);
   if (new Date(expires) < new Date()) {
