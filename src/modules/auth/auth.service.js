@@ -323,7 +323,7 @@ const verifyPreRegisterOtp = async (email, otp) => {
   const { getClient } = require("../../config/redis");
   const redis = getClient();
   const raw = await redis.get(`preregister:${email}`);
-  if (!raw) throw new ApiError(400, "No OTP requested or expired");
+  if (!raw) throw new ApiError(400, "Verification code expired or not requested. Please click 'Resend Code'.");
 
   const { otpHash, expires } = JSON.parse(raw);
   if (new Date(expires) < new Date()) {
