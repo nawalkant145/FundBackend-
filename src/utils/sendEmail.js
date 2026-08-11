@@ -1,27 +1,55 @@
-// Email sender via Gmail SMTP (Nodemailer) using App Password.
-// Falls back to console log in dev when no credentials set.
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
-let transporter = null;
+let resendInstance = null;
 
-const init = () => {
-  if (transporter) return transporter;
+const getResend = () => {
+  if (resendInstance) return resendInstance;
+  const apiKey = process.env.RESEND_API_KEY;
+  if (apiKey) {
+    resendInstance = new Resend(apiKey.trim());
+    return resendInstance;
+  }
+  return null;
+};
+
+const getTransporter = () => {
   const user = process.env.GMAIL_USER;
   const pass = process.env.GMAIL_APP_PASSWORD;
   if (!user || !pass) return null;
 
-  transporter = nodemailer.createTransport({
+  return nodemailer.createTransport({
     service: "gmail",
-    auth: { user, pass },
+    auth: {
+      user: user.trim(),
+      pass: pass.trim().replace(/\s+/g, ""),
+    },
   });
-  return transporter;
 };
 
 const sendEmail = async ({ to, subject, html, text }) => {
   const gUser = process.env.GMAIL_USER || "expglobusiness@gmail.com";
-  const from = `EXPGLO FUND <${gUser}>`;
-  const transport = init();
 
+  // 1. Resend API fallback if RESEND_API_KEY is present
+  const resend = getResend();
+  if (resend) {
+    try {
+      const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+      const data = await resend.emails.send({
+        from: `EXPGLO FUND <${fromEmail}>`,
+        to: [to],
+        subject,
+        html,
+        text,
+      });
+      console.log(`📧 Email sent via Resend to ${to} — id: ${data?.id || "ok"}`);
+      return { id: data?.id || "resend-ok", success: true };
+    } catch (err) {
+      console.error("⚠️ Resend API error:", err.message);
+    }
+  }
+
+  // 2. Gmail SMTP transport
+  const transport = getTransporter();
   if (!transport) {
     console.log("📧 [DEV] Email skipped — no GMAIL credentials set in .env");
     console.log(`    To: ${to} | Subject: ${subject}`);
@@ -30,24 +58,31 @@ const sendEmail = async ({ to, subject, html, text }) => {
   }
 
   try {
+    const from = `EXPGLO FUND <${gUser.trim()}>`;
     const info = await transport.sendMail({
       from,
       to,
-      replyTo: gUser,
+      replyTo: gUser.trim(),
       subject,
       html,
       text,
       headers: {
         "X-Auto-Response-Suppress": "OOF, AutoReply",
         "Auto-Submitted": "auto-generated",
-        "X-Report-Abuse-To": gUser,
+        "X-Report-Abuse-To": gUser.trim(),
       },
     });
     console.log(`📧 Email sent to ${to} — messageId: ${info.messageId}`);
     return { id: info.messageId, success: true };
   } catch (err) {
-    console.error("⚠️  Gmail SMTP error:", err.message);
-    throw new Error(`Failed to send email: ${err.message}`);
+    if (err.message.includes("535") || err.message.includes("BadCredentials")) {
+      console.error(
+        "❌ Gmail App Password rejected (535 BadCredentials). Please check GMAIL_APP_PASSWORD env var on Render."
+      );
+    } else {
+      console.error("⚠️ Gmail SMTP error:", err.message);
+    }
+    return { id: "smtp-failed", success: false, error: err.message };
   }
 };
 

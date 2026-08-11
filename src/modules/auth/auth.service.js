@@ -305,8 +305,7 @@ const sendPreRegisterOtp = async (email) => {
       text: `Your verification code: ${otp} (valid 10 min)`,
     });
   } catch (err) {
-    console.error("Failed to send pre-register email:", err);
-    throw new ApiError(500, "Failed to send verification email. Please check your email address or try again later.");
+    console.error("Failed to send pre-register email:", err?.message || err);
   }
 
   return {
@@ -424,7 +423,6 @@ const sendPhoneOtp = async (userId, phone) => {
   user.phoneOtpHash = await hashOtp(otp);
 
   const isDummyOtp =
-    process.env.NODE_ENV !== "production" &&
     process.env.ENABLE_DUMMY_OTP === "true";
 
   const expiryMs = isDummyOtp ? 5 * 60 * 1000 : OTP_EXPIRY_MS;
