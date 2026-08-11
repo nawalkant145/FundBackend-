@@ -297,15 +297,16 @@ const sendPreRegisterOtp = async (email) => {
     console.log(`\n📧 PRE-REGISTER OTP for ${email}: ${otp}\n`);
   }
 
-  try {
-    await sendEmail({
-      to: email,
-      subject: "Your EXPGLO FUND verification code",
-      html: otpEmailHtml(otp),
-      text: `Your verification code: ${otp} (valid 10 min)`,
-    });
-  } catch (err) {
-    console.error("Failed to send pre-register email:", err?.message || err);
+  const emailRes = await sendEmail({
+    to: email,
+    subject: "Your EXPGLO FUND verification code",
+    html: otpEmailHtml(otp),
+    text: `Your verification code: ${otp} (valid 10 min)`,
+  });
+
+  if (emailRes && emailRes.success === false) {
+    console.error("❌ Pre-register email delivery failed:", emailRes.error);
+    throw new ApiError(500, `Email delivery failed: ${emailRes.error || "SMTP delivery failed"}`);
   }
 
   return {
