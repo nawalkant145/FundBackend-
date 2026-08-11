@@ -31,8 +31,10 @@ const DEFAULT_ORIGINS = [
   "https://www.expglobusiness.com",
   "https://expglofund.web.app",
   "https://expglofund.firebaseapp.com",
-  // Vercel deployments
-  "https://fund-frontend-ctlw.vercel.app",
+  // Railway (primary frontend)
+  "https://fundfrontend-production.up.railway.app",
+  // Vercel (old deployment — kept for backward compat)
+  "https://fund-frontend-ctlw.vercel.app"
 ];
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
