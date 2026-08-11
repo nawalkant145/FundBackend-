@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 
-const generateOtp = () => String(crypto.randomInt(100000, 1000000)); // 6-digit
+const generateOtp = () => String(crypto.randomInt(100000, 999999));
 
 const hashOtp = async (otp) => bcrypt.hash(otp, 10);
 

@@ -67,11 +67,6 @@ const sendEmail = async ({ to, subject, html, text }) => {
       subject,
       html,
       text,
-      headers: {
-        "X-Auto-Response-Suppress": "OOF, AutoReply",
-        "Auto-Submitted": "auto-generated",
-        "X-Report-Abuse-To": gUser.trim(),
-      },
     });
     console.log(`📧 Email sent to ${to} — messageId: ${info.messageId}`);
     return { id: info.messageId, success: true };
