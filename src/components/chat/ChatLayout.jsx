@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import ChatSidebar from "./ChatSidebar";
 import ChatHeader from "./ChatHeader";
 import MessageList from "./MessageList";
@@ -17,6 +17,38 @@ export const ChatLayout = ({
   const [activeTab, setActiveTab] = useState("chats");
   const [showSearchBox, setShowSearchBox] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState("");
+
+  // Global wheel event delegation: guarantees instant scrolling anywhere on display/content click
+  useEffect(() => {
+    const handleWheel = (e) => {
+      let el = e.target;
+      while (el && el !== document.body) {
+        if (
+          el.classList &&
+          (el.classList.contains("wa-message-list-container") ||
+            el.classList.contains("wa-chat-list") ||
+            el.classList.contains("wa-call-history-container") ||
+            el.classList.contains("wa-media-gallery-container") ||
+            el.classList.contains("feed-container") ||
+            el.classList.contains("wa-page-content") ||
+            el.classList.contains("app-feed"))
+        ) {
+          return;
+        }
+        el = el.parentElement;
+      }
+
+      const activeScrollContainer = document.querySelector(
+        ".wa-main-panel .wa-message-list-container, .wa-main-panel .wa-call-history-container, .wa-main-panel .wa-media-gallery-container, .wa-main-panel .feed-container, .wa-main-panel .app-feed, .wa-sidebar .wa-chat-list"
+      );
+      if (activeScrollContainer) {
+        activeScrollContainer.scrollTop += e.deltaY;
+      }
+    };
+
+    window.addEventListener("wheel", handleWheel, { passive: true });
+    return () => window.removeEventListener("wheel", handleWheel);
+  }, []);
 
   const {
     chats,
