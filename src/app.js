@@ -31,6 +31,8 @@ const DEFAULT_ORIGINS = [
   "https://www.expglobusiness.com",
   "https://expglofund.web.app",
   "https://expglofund.firebaseapp.com",
+  // Vercel deployments
+  "https://fund-frontend-ctlw.vercel.app",
 ];
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
@@ -49,6 +51,8 @@ app.use(
       if (allOrigins.includes(origin)) return cb(null, true);
       // Allow any netlify.app deployment (previews, alternate frontend domains)
       if (/\.netlify\.app$/.test(origin)) return cb(null, true);
+      // Allow any vercel.app deployment (previews, alternate frontend domains)
+      if (/\.vercel\.app$/.test(origin)) return cb(null, true);
       // In dev, allow everything
       if (process.env.NODE_ENV !== "production") return cb(null, true);
       console.warn(`CORS blocked: ${origin}`);
