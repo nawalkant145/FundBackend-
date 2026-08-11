@@ -12,6 +12,8 @@ const { notFound, errorHandler } = require("./middlewares/error.middleware");
 const apiRoutes = require("./routes");
 const investmentController = require("./modules/investment/investment.controller");
 
+const ApiError = require("./utils/ApiError");
+
 const app = express();
 
 // ─── Security ──────────────────────────────────
@@ -23,6 +25,7 @@ app.use(helmet());
 const DEFAULT_ORIGINS = [
   "http://localhost:5173",
   "http://localhost:3000",
+  "https://expglofrontend.netlify.app",
   "https://expglofunds.netlify.app",
   "https://expglobusiness.com",
   "https://www.expglobusiness.com",
@@ -44,10 +47,12 @@ app.use(
       // Allow requests with no origin (mobile apps, server-to-server, curl)
       if (!origin) return cb(null, true);
       if (allOrigins.includes(origin)) return cb(null, true);
+      // Allow any netlify.app deployment (previews, alternate frontend domains)
+      if (/\.netlify\.app$/.test(origin)) return cb(null, true);
       // In dev, allow everything
       if (process.env.NODE_ENV !== "production") return cb(null, true);
       console.warn(`CORS blocked: ${origin}`);
-      return cb(new Error(`CORS blocked: ${origin}`));
+      return cb(new ApiError(403, `CORS blocked: ${origin}`));
     },
     credentials: true,
     maxAge: 86400, // 24 hours preflight cache
