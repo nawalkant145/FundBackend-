@@ -35,16 +35,27 @@ export const MessageList = ({
   isTyping,
 }) => {
   const containerRef = useRef(null);
+  const prevTargetId = useRef(targetUser?._id);
 
-  // Auto-scroll to bottom on chat open, new message arrival, or typing state change
+  // Smart auto-scroll: scroll to bottom on chat switch or when near bottom; keep position when reading history.
   useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollTo({
-        top: containerRef.current.scrollHeight,
-        behavior: "smooth",
+    if (!containerRef.current) return;
+    const el = containerRef.current;
+
+    const chatChanged = prevTargetId.current !== targetUser?._id;
+    if (chatChanged) {
+      prevTargetId.current = targetUser?._id;
+    }
+
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+
+    if (chatChanged || isNearBottom) {
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: chatChanged ? "auto" : "smooth",
       });
     }
-  }, [messages, isTyping]);
+  }, [messages, isTyping, targetUser?._id]);
 
   const handleScroll = () => {
     if (containerRef.current && containerRef.current.scrollTop === 0 && hasMore && !loadingMore) {
