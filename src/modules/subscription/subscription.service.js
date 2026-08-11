@@ -76,10 +76,12 @@ const createOrder = async (userId) => {
   const razorpay = getRazorpay();
 
   if (!razorpay) {
-    throw new ApiError(
-      500,
-      "Payment gateway not configured. Please configure RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.",
-    );
+    // Dev fallback: activate subscription immediately when Razorpay keys are not set
+    const active = await activate(sub);
+    return {
+      subscription: active,
+      activated: true,
+    };
   }
 
   const order = await razorpay.orders.create({
