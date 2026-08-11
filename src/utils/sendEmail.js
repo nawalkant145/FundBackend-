@@ -1,3 +1,4 @@
+const nodemailer = require("nodemailer");
 const { Resend } = require("resend");
 
 let resendInstance = null;
