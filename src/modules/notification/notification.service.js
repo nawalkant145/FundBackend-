@@ -22,11 +22,20 @@ const pushFCM = async (fcmToken, { title, body, data = {} }) => {
 };
 
 // Map a notification type → the user preference key that gates it.
-// Types without an entry are always delivered (e.g. account/security, calls).
+// Types without an entry are always delivered (e.g. calls, system).
 const TYPE_TO_PREF = {
   like: "likes",
   save: "saves",
   investment: "investmentInterest",
+  investment_update: "investmentUpdates",
+  investment_status: "investmentStatus",
+  message: "messages",
+  follow_update: "followedFounders",
+  saved_pitch_update: "savedPitchUpdates",
+  recommendation: "pitchRecommendations",
+  pitch_expiry: "pitchExpiry",
+  digest: "weeklyDigest",
+  account_security: "accountSecurity",
 };
 
 // Main entry — fan out to in-app socket, FCM, and DB
