@@ -8,6 +8,7 @@ import CallHistory from "../calls/CallHistory";
 import MediaGallery from "../media/MediaGallery";
 import CallDetailsModal from "../calls/CallDetailsModal";
 import ActiveCallModal from "../calls/ActiveCallModal";
+import DealRoomModal from "./DealRoomModal";
 
 export const ChatLayout = ({
   currentUser,
@@ -17,6 +18,7 @@ export const ChatLayout = ({
   const [activeTab, setActiveTab] = useState("chats");
   const [showSearchBox, setShowSearchBox] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState("");
+  const [dealRoomChat, setDealRoomChat] = useState(null);
 
   const {
     chats,
@@ -122,6 +124,7 @@ export const ChatLayout = ({
                     startCall(targetId, "video", name, avatar)
                   }
                   onToggleSearch={() => setShowSearchBox(!showSearchBox)}
+                  onCreateDealRoom={(chat) => setDealRoomChat(chat)}
                   isTyping={isCurrentChatTyping}
                 />
 
@@ -247,6 +250,16 @@ export const ChatLayout = ({
           onToggleVideo={toggleVideo}
           onToggleSpeaker={() => setIsSpeakerOn(!isSpeakerOn)}
           onToggleScreenShare={toggleScreenShare}
+        />
+      )}
+
+      {/* 🔐 Deal Room Modal Overlay */}
+      {dealRoomChat && (
+        <DealRoomModal
+          isOpen={!!dealRoomChat}
+          onClose={() => setDealRoomChat(null)}
+          chat={dealRoomChat}
+          currentUser={currentUser}
         />
       )}
     </div>

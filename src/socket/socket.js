@@ -19,6 +19,18 @@ export const initSocket = (token) => {
     reconnectionDelay: 1000,
   });
 
+  socket.on("connect", () => {
+    console.log("🔌 CALL SOCKET CONNECTED", { id: socket.id, serverUrl });
+  });
+
+  socket.on("disconnect", (reason) => {
+    console.log("🔌 CALL SOCKET DISCONNECTED", reason);
+  });
+
+  socket.on("connect_error", (err) => {
+    console.error("CALL SOCKET ERROR", err.message || err);
+  });
+
   return socket;
 };
 

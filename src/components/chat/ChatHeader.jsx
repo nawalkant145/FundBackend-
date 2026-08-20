@@ -7,15 +7,22 @@ export const ChatHeader = ({
   onStartVoiceCall,
   onStartVideoCall,
   onToggleSearch,
+  onCreateDealRoom,
   isTyping = false,
 }) => {
   if (!chat) return null;
 
   const name = targetUser?.name || targetUser?.username || "User";
   const avatar = targetUser?.avatar || "/default-avatar.png";
-  const isVerified = targetUser?.isVerified || targetUser?.verificationLevel >= 2;
   const isOnline = targetUser?.isOnline;
   const lastSeen = targetUser?.lastSeen;
+
+  // Badges
+  const isIdentityVerified = targetUser?.isIdentityVerified || targetUser?.isVerified || targetUser?.verificationLevel >= 2;
+  const isBusinessVerified = targetUser?.isBusinessVerified || (targetUser?.role === "founder" && targetUser?.companyVerificationStatus === "approved");
+  const isOrganizationVerified = targetUser?.isOrganizationVerified || (targetUser?.role === "investor" && targetUser?.investmentVerificationStatus === "approved");
+  const isInvestorProfileReviewed = targetUser?.isInvestorProfileVerified || (targetUser?.role === "investor" && targetUser?.investmentVerificationStatus === "approved");
+  const isStartupComplete = targetUser?.role === "founder" && targetUser?.profileCompleteness >= 70;
 
   const renderStatus = () => {
     if (isTyping) return <span className="wa-typing-text">typing...</span>;
@@ -35,13 +42,32 @@ export const ChatHeader = ({
           {isOnline && <span className="wa-online-badge"></span>}
         </div>
         <div className="wa-user-details">
-          <div className="wa-user-name-row">
-            <span className="wa-user-name">{name}</span>
-            {isVerified && (
-              <span className="wa-verified-badge" title="Verified User">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="#00a884">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
-                </svg>
+          <div className="wa-user-name-row" style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+            <span className="wa-user-name" style={{ fontWeight: 600 }}>{name}</span>
+            {/* Multi-badge pills */}
+            {isIdentityVerified && (
+              <span className="badge-pill identity-badge" style={{ backgroundColor: "rgba(16, 185, 129, 0.15)", color: "#10b981", fontSize: "11px", padding: "2px 6px", borderRadius: "10px", fontWeight: 600 }} title="🟢 Identity Verified (Aadhaar/DigiLocker + PAN)">
+                🟢 Identity Verified
+              </span>
+            )}
+            {targetUser?.role === "founder" && isBusinessVerified && (
+              <span className="badge-pill business-badge" style={{ backgroundColor: "rgba(59, 130, 246, 0.15)", color: "#3b82f6", fontSize: "11px", padding: "2px 6px", borderRadius: "10px", fontWeight: 600 }} title="🔵 Business Verified (Incorporation/CIN/PAN)">
+                🔵 Business Verified
+              </span>
+            )}
+            {targetUser?.role === "investor" && isOrganizationVerified && (
+              <span className="badge-pill org-badge" style={{ backgroundColor: "rgba(59, 130, 246, 0.15)", color: "#3b82f6", fontSize: "11px", padding: "2px 6px", borderRadius: "10px", fontWeight: 600 }} title="🔵 Organization Verified">
+                🔵 Organization Verified
+              </span>
+            )}
+            {targetUser?.role === "investor" && isInvestorProfileReviewed && (
+              <span className="badge-pill investor-badge" style={{ backgroundColor: "rgba(139, 92, 246, 0.15)", color: "#8b5cf6", fontSize: "11px", padding: "2px 6px", borderRadius: "10px", fontWeight: 600 }} title="🟣 Investor Profile Reviewed">
+                🟣 Investor Profile Reviewed
+              </span>
+            )}
+            {targetUser?.role === "founder" && isStartupComplete && (
+              <span className="badge-pill startup-badge" style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", fontSize: "11px", padding: "2px 6px", borderRadius: "10px", fontWeight: 600 }} title="🟡 Startup Profile Complete">
+                🟡 Startup Profile Complete
               </span>
             )}
           </div>
@@ -49,7 +75,38 @@ export const ChatHeader = ({
         </div>
       </div>
 
-      <div className="wa-chat-header-actions">
+      <div className="wa-chat-header-actions" style={{ display: "flex", gap: "8px" }}>
+        {onCreateDealRoom && (() => {
+          const userRole = currentUser?.role || "founder";
+          const targetRole = targetUser?.role || "founder";
+          const buttonLabel = (userRole === "founder" && targetRole === "investor")
+            ? "🔐 Request Deal Room"
+            : "🔐 Create Deal Room";
+
+          return (
+            <button
+              className="wa-header-action-btn deal-room-btn"
+              title={buttonLabel}
+              onClick={() => onCreateDealRoom(chat)}
+              style={{
+                backgroundColor: "#8b5cf6",
+                color: "#fff",
+                border: "none",
+                borderRadius: "6px",
+                padding: "6px 12px",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px"
+              }}
+            >
+              {buttonLabel}
+            </button>
+          );
+        })()}
+
         <button
           className="wa-header-action-btn"
           title="Voice Call"

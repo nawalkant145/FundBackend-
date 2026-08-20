@@ -154,11 +154,21 @@ export const useCalls = (currentUser) => {
     async (receiverId, callType = "voice", recipientName = "", recipientAvatar = "") => {
       try {
         const socket = getSocket();
+        console.log("CALL SOCKET STATUS", {
+          connected: socket?.connected,
+          id: socket?.id,
+        });
+        console.log("STARTING CALL", {
+          receiverId,
+          socketConnected: socket?.connected,
+        });
+
         if (socket && socket.connected) {
           socket.emit(
             "call_user",
             { receiverId, callType, type: callType },
             async (ack) => {
+              console.log("CALL ACK", ack);
               if (ack && ack.ok) {
                 setActiveCall({
                   callId: ack.callId,
@@ -170,28 +180,45 @@ export const useCalls = (currentUser) => {
                   isOutgoing: true,
                 });
                 await startMediaStream(callType);
+              } else {
+                // Backend rejected the call — surface the error
+                const msg = ack?.error || "Failed to start call. Please try again.";
+                console.error("Call initiation rejected:", msg);
+                alert(msg);
               }
             },
           );
         } else {
-          const res = await callApi.initiateCall(receiverId, callType);
-          setActiveCall({
-            callId: res.call._id,
-            receiverId,
-            receiverName: recipientName,
-            receiverAvatar: recipientAvatar,
-            callType,
-            status: "ringing",
-            isOutgoing: true,
-          });
-          await startMediaStream(callType);
+          // Socket not connected — fall back to REST API
+          try {
+            const res = await callApi.initiateCall(receiverId, callType);
+            setActiveCall({
+              callId: res.call._id,
+              receiverId,
+              receiverName: recipientName,
+              receiverAvatar: recipientAvatar,
+              callType,
+              status: "ringing",
+              isOutgoing: true,
+            });
+            await startMediaStream(callType);
+          } catch (apiErr) {
+            const msg =
+              apiErr?.response?.data?.message ||
+              apiErr?.message ||
+              "Connection not ready. Please check your network and try again.";
+            console.error("Call REST fallback failed:", apiErr);
+            alert(msg);
+          }
         }
       } catch (err) {
         console.error("Failed to initiate call:", err);
+        alert(err?.message || "Failed to start call. Please try again.");
       }
     },
     [startMediaStream],
   );
+
 
   // Accept incoming call
   const acceptCall = useCallback(async () => {
