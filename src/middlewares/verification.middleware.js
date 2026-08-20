@@ -1,16 +1,19 @@
 const ApiError = require("../utils/ApiError");
 
 const requireIdentityVerified = (req, res, next) => {
-  if (
-    req.user.verificationLevel < 2 ||
-    (req.user.kycStatus !== "approved" && req.user.documents?.status !== "approved")
-  ) {
+  const isVerified =
+    req.user?.identityVerified ||
+    (req.user?.verificationLevel || 0) >= 1 ||
+    req.user?.kycStatus === "approved" ||
+    req.user?.documents?.status === "approved";
+
+  if (!isVerified) {
     return next(
-      new ApiError(403, "Level 2 Identity Verification required to access this feature.", {
+      new ApiError(403, "Identity Verification required to access this feature.", {
         code: "IDENTITY_VERIFICATION_REQUIRED",
-        requiredLevel: 2,
-        currentLevel: req.user.verificationLevel || 1,
-        cta: "/kyc/identity",
+        requiredLevel: 1,
+        currentLevel: req.user?.verificationLevel || 0,
+        cta: "/kyc",
       })
     );
   }
@@ -18,15 +21,17 @@ const requireIdentityVerified = (req, res, next) => {
 };
 
 const requireFounderVerified = (req, res, next) => {
-  if (
-    req.user.verificationLevel < 3 ||
-    req.user.companyVerificationStatus !== "approved"
-  ) {
+  const isFounderVerified =
+    req.user?.companyVerificationStatus === "approved" ||
+    req.user?.isBusinessVerified === true ||
+    (req.user?.verificationLevel || 0) >= 3;
+
+  if (!isFounderVerified) {
     return next(
       new ApiError(403, "Level 3 Founder Verification required to publish startups or pitches.", {
         code: "FOUNDER_VERIFICATION_REQUIRED",
         requiredLevel: 3,
-        currentLevel: req.user.verificationLevel || 1,
+        currentLevel: req.user?.verificationLevel || 1,
         cta: "/kyc/company",
       })
     );
@@ -35,15 +40,17 @@ const requireFounderVerified = (req, res, next) => {
 };
 
 const requireInvestorVerified = (req, res, next) => {
-  if (
-    req.user.verificationLevel < 4 ||
-    req.user.investmentVerificationStatus !== "approved"
-  ) {
+  const isInvestorVerified =
+    req.user?.investmentVerificationStatus === "approved" ||
+    req.user?.isInvestorProfileVerified === true ||
+    (req.user?.verificationLevel || 0) >= 4;
+
+  if (!isInvestorVerified) {
     return next(
       new ApiError(403, "Level 4 Investor Verification required to initiate investment deals.", {
         code: "INVESTOR_VERIFICATION_REQUIRED",
         requiredLevel: 4,
-        currentLevel: req.user.verificationLevel || 1,
+        currentLevel: req.user?.verificationLevel || 1,
         cta: "/kyc/investor",
       })
     );

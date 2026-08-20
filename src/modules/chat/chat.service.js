@@ -49,7 +49,8 @@ const startChat = async (initiatorId, targetId) => {
     throw new ApiError(404, "User not found");
   }
 
-  if (initiator.verificationLevel < 2) {
+  const isPhoneVerified = (u) => !!(u?.phoneVerified || u?.isPhoneVerified || (u?.verificationLevel || 0) >= 1);
+  if (!isPhoneVerified(initiator)) {
     if (process.env.NODE_ENV === "production") {
       throw new ApiError(403, "Verify phone before chatting");
     }

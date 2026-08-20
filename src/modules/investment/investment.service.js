@@ -35,7 +35,8 @@ const expressInterest = async (
   const investor = await User.findById(investorId);
   const founder = await User.findById(resolvedFounderId);
   if (!founder) throw new ApiError(404, "Founder not found");
-  if (investor.verificationLevel < 2) {
+  const isPhoneVerified = (u) => !!(u?.phoneVerified || u?.isPhoneVerified || (u?.verificationLevel || 0) >= 1);
+  if (!isPhoneVerified(investor)) {
     throw new ApiError(403, "Verify your phone before expressing interest");
   }
 
