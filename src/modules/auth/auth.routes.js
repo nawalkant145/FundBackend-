@@ -8,7 +8,12 @@ const {
   otpVerifyLimiter,
 } = require("../../middlewares/rateLimit.middleware");
 
+/* === PRE-ACCOUNT SIGNUP SESSION ROUTE (Commented out — uncomment when mandatory pre-account KYC is enabled) ===
+router.post("/signup/initiate", authLimiter, c.initiateSignup);
+================================================================================================================ */
 router.post("/register", authLimiter, c.register);
+
+
 router.post("/login", authLimiter, c.login);
 router.get("/check-availability", c.checkAvailability);
 router.post("/refresh-token", c.refresh);

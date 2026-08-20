@@ -98,10 +98,10 @@ const registerUser = async ({
     email,
     password,
     role,
-    // BUG-02 FIX: Use the emailVerified param, not a hardcoded true.
-    // This ensures only callers who completed the OTP flow can set level 1.
-    isEmailVerified: emailVerified,
-    verificationLevel: emailVerified ? 1 : 0,
+    emailVerified: false,
+    phoneVerified: false,
+    identityVerified: false,
+    verificationLevel: 0,
   };
   if (phone) userData.phone = normalizedPhone;
   if (country) userData.country = country;

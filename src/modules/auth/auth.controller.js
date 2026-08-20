@@ -2,9 +2,11 @@ const asyncHandler = require("../../utils/asyncHandler");
 const ApiResponse = require("../../utils/ApiResponse");
 const ApiError = require("../../utils/ApiError");
 const authService = require("./auth.service");
+const signupSessionService = require("./signupSession.service");
 const {
   validateRegister,
   validateLogin,
+  validateInitiateSignup,
   validateSendPreRegisterOtp,
   validateVerifyPreRegisterOtp,
   validateVerifyEmailOtp,
@@ -14,6 +16,7 @@ const {
   validateResetPassword,
   validateChangePassword,
 } = require("./auth.validation");
+
 
 const cookieOptions = {
   httpOnly: true,
@@ -61,22 +64,10 @@ const register = asyncHandler(async (req, res) => {
     investmentThesis,
   } = req.body;
 
-  // BUG-02 FIX: Normalize email to lowercase BEFORE the Redis lookup.
-  // Without this, an attacker could send 'Test@Example.COM' for OTP but
-  // 'test@example.com' for registration and bypass the duplicate-email check.
   const email = (rawEmail || "").toLowerCase().trim();
 
-  // Check that email was pre-verified via OTP
-  const { getClient } = require("../../config/redis");
-  const redis = getClient();
-  const verified = await redis.get(`preregister:verified:${email}`);
-  if (!verified) {
-    throw new ApiError(
-      403,
-      "Email not verified. Please verify your email first.",
-    );
-  }
-
+  // Security Protection: Never trust client-supplied verification flags in req.body.
+  // Account starts with emailVerified: false, phoneVerified: false, identityVerified: false, verificationLevel: 0.
   const result = await authService.registerUser({
     name,
     username,
@@ -95,17 +86,35 @@ const register = asyncHandler(async (req, res) => {
     preferredIndustries,
     preferredStages,
     investmentThesis,
-    // BUG-02 FIX: Pass the verified flag explicitly — the service no longer
-    // hardcodes isEmailVerified:true; only this OTP-confirmed path sets it.
-    emailVerified: true,
+    emailVerified: false,
+    phoneVerified: false,
+    identityVerified: false,
   });
-
-  // Clean up the verification flag
-  await redis.del(`preregister:verified:${email}`);
 
   setAuthCookies(res, result.accessToken, result.refreshToken);
   res.status(201).json(new ApiResponse(201, result, "Registration successful"));
 });
+
+/* === PRE-ACCOUNT SIGNUP SESSION CONTROLLER (Commented out — uncomment when mandatory pre-account KYC is enabled) ===
+const initiateSignup = asyncHandler(async (req, res) => {
+  validateInitiateSignup(req.body);
+  const {
+    name, username, email: rawEmail, password, role, phone, country,
+    companyName, industry, fundingStage, website, linkedIn,
+    investorType, investmentRange, preferredIndustries, preferredStages, investmentThesis,
+  } = req.body;
+  const email = (rawEmail || "").toLowerCase().trim();
+  const result = await signupSessionService.createSession({
+    name, username, email, password, role, phone, country,
+    companyName, industry, fundingStage, website, linkedIn,
+    investorType, investmentRange, preferredIndustries, preferredStages, investmentThesis,
+  });
+  res.status(200).json(
+    new ApiResponse(200, result, "Signup session created. Proceed to identity verification.")
+  );
+});
+=================================================================================================================== */
+
 
 // Live availability check for username / email / phone
 const checkAvailability = asyncHandler(async (req, res) => {
@@ -227,8 +236,10 @@ const changePassword = asyncHandler(async (req, res) => {
 
 module.exports = {
   register,
+  // initiateSignup, // uncomment when mandatory pre-account KYC is enabled
   checkAvailability,
   login,
+
   logout,
   refresh,
   getMe,
@@ -242,3 +253,4 @@ module.exports = {
   resetPassword,
   changePassword,
 };
+
