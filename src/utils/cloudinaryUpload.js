@@ -48,12 +48,39 @@ const uploadToCloudinary = async (filePath, options = {}) => {
 };
 
 const uploadVideoToCloudinary = async (filePath) => {
-  return uploadToCloudinary(filePath, {
-    resource_type: "video",
-    folder: "pitches",
-    eager: [{ streaming_profile: "hd", format: "m3u8" }],
-    eager_async: true,
-  });
+  if (!process.env.CLOUDINARY_CLOUD_NAME) {
+    const basename = path.basename(filePath);
+    return {
+      url: `/uploads/${basename}`,
+      publicId: basename,
+    };
+  }
+  try {
+    const result = await cloudinary.uploader.upload_large(filePath, {
+      resource_type: "video",
+      folder: "pitches",
+      chunk_size: 6000000, // 6MB chunked streaming for maximum upload throughput
+      eager: [{ streaming_profile: "hd", format: "m3u8" }],
+      eager_async: true,
+    });
+    cleanupTempFile(filePath);
+    return {
+      url: result.secure_url,
+      publicId: result.public_id,
+      duration: result.duration,
+      width: result.width,
+      height: result.height,
+      format: result.format,
+      bytes: result.bytes,
+    };
+  } catch (err) {
+    console.warn("⚠️ Cloudinary video upload error, using local fallback:", err.message);
+    const basename = path.basename(filePath);
+    return {
+      url: `/uploads/${basename}`,
+      publicId: basename,
+    };
+  }
 };
 
 const uploadImageToCloudinary = async (filePath, folder = "images") => {

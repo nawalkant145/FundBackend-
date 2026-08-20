@@ -200,6 +200,10 @@ const rejectInvestorKYC = asyncHandler(async (req, res) => {
   const item = await adminService.rejectInvestorKYC(req.params.investmentKycId, req.body.reason, req.user._id);
   res.json(new ApiResponse(200, { item }, "Investor transaction KYC rejected"));
 });
+const completeDueDiligence = asyncHandler(async (req, res) => {
+  const result = await adminService.completeDueDiligence(req.params.userId, req.user._id, req.body?.notes);
+  res.json(new ApiResponse(200, result, "Due Diligence marked as completed"));
+});
 
 // Reports
 const listReports = asyncHandler(async (req, res) => {
@@ -413,6 +417,7 @@ module.exports = {
   rejectCompanyKYC,
   approveInvestorKYC,
   rejectInvestorKYC,
+  completeDueDiligence,
   listReports,
   resolveReport,
   listAllComments,
