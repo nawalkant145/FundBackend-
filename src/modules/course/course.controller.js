@@ -16,7 +16,6 @@ const receiptEmailHtml = ({ name, courseTitle, price, paymentMethod, transaction
     <tr>
       <td align="center">
         <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08)">
-          <!-- Header -->
           <tr>
             <td style="background:linear-gradient(135deg,#1B5E3F 0%,#0F4A2E 100%);padding:32px 40px;text-align:center">
               <p style="margin:0;font-size:11px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:#F5B942;margin-bottom:6px">EXPGLO FUND ACADEMY</p>
@@ -24,16 +23,12 @@ const receiptEmailHtml = ({ name, courseTitle, price, paymentMethod, transaction
               <p style="margin:8px 0 0;font-size:13px;color:rgba(255,255,255,0.75)">Your receipt for course access</p>
             </td>
           </tr>
-
-          <!-- Body -->
           <tr>
             <td style="padding:36px 40px">
               <p style="margin:0 0 24px;font-size:15px;color:#0A1F14">Hi <strong>${name || "there"}</strong>,</p>
               <p style="margin:0 0 28px;font-size:14px;color:#444;line-height:1.6">
                 Your payment has been successfully processed. You now have <strong>lifetime access</strong> to the course below.
               </p>
-
-              <!-- Course Card -->
               <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0faf4;border:1px solid #c8e6d3;border-radius:12px;margin-bottom:28px">
                 <tr>
                   <td style="padding:20px 24px">
@@ -42,8 +37,6 @@ const receiptEmailHtml = ({ name, courseTitle, price, paymentMethod, transaction
                   </td>
                 </tr>
               </table>
-
-              <!-- Receipt Details -->
               <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8ede9;border-radius:12px;overflow:hidden;margin-bottom:28px">
                 <tr style="background:#fafcfa">
                   <td style="padding:14px 20px;font-size:12px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:1px">Receipt Details</td>
@@ -71,19 +64,15 @@ const receiptEmailHtml = ({ name, courseTitle, price, paymentMethod, transaction
                   </td>
                 </tr>
               </table>
-
-              <!-- CTA -->
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px">
                 <tr>
                   <td align="center">
-                    <a href="https://expglofund.com/app" style="display:inline-block;background:linear-gradient(135deg,#1B5E3F 0%,#0F4A2E 100%);color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;padding:14px 36px;border-radius:50px;letter-spacing:0.5px">
+                    <a href="https://expglofund.com/app/courses" style="display:inline-block;background:linear-gradient(135deg,#1B5E3F 0%,#0F4A2E 100%);color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;padding:14px 36px;border-radius:50px;letter-spacing:0.5px">
                       Go to My Courses →
                     </a>
                   </td>
                 </tr>
               </table>
-
-              <!-- Guarantee -->
               <table width="100%" cellpadding="0" cellspacing="0" style="background:#fffbf0;border:1px solid #f5e6b8;border-radius:10px;margin-bottom:8px">
                 <tr>
                   <td style="padding:14px 20px">
@@ -95,8 +84,6 @@ const receiptEmailHtml = ({ name, courseTitle, price, paymentMethod, transaction
               </table>
             </td>
           </tr>
-
-          <!-- Footer -->
           <tr>
             <td style="background:#f5f7f5;padding:20px 40px;text-align:center;border-top:1px solid #e8ede9">
               <p style="margin:0;font-size:11px;color:#999;line-height:1.6">
@@ -143,7 +130,7 @@ const sendCourseReceipt = asyncHandler(async (req, res) => {
   );
 });
 
-// Create Course (Founder only)
+// Create Course (Admin only)
 const createCourse = asyncHandler(async (req, res) => {
   const course = await courseService.createCourse(
     req.user._id,
@@ -153,13 +140,13 @@ const createCourse = asyncHandler(async (req, res) => {
   res.status(201).json(new ApiResponse(201, { course }, "Course created successfully"));
 });
 
-// Get logged-in Founder's courses
-const getMyCourses = asyncHandler(async (req, res) => {
-  const result = await courseService.getFounderCourses(req.user._id, req.query);
-  res.status(200).json(new ApiResponse(200, result, "Founder courses retrieved"));
+// Get Admin managed courses
+const getAdminCourses = asyncHandler(async (req, res) => {
+  const result = await courseService.getAdminCourses(req.query);
+  res.status(200).json(new ApiResponse(200, result, "Admin courses retrieved"));
 });
 
-// Update Course (Founder only)
+// Update Course (Admin only)
 const updateCourse = asyncHandler(async (req, res) => {
   const course = await courseService.updateCourse(
     req.params.id,
@@ -170,13 +157,13 @@ const updateCourse = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, { course }, "Course updated successfully"));
 });
 
-// Delete Course (Founder only)
+// Delete Course (Admin only)
 const deleteCourse = asyncHandler(async (req, res) => {
   const result = await courseService.deleteCourse(req.params.id, req.user._id);
   res.status(200).json(new ApiResponse(200, result, "Course deleted successfully"));
 });
 
-// Add Lesson to Course (Founder only)
+// Add Lesson to Course (Admin only)
 const addLesson = asyncHandler(async (req, res) => {
   const course = await courseService.addLesson(
     req.params.id,
@@ -187,7 +174,7 @@ const addLesson = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, { course }, "Lesson added successfully"));
 });
 
-// Update Lesson in Course (Founder only)
+// Update Lesson in Course (Admin only)
 const updateLesson = asyncHandler(async (req, res) => {
   const course = await courseService.updateLesson(
     req.params.id,
@@ -199,7 +186,7 @@ const updateLesson = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, { course }, "Lesson updated successfully"));
 });
 
-// Delete Lesson from Course (Founder only)
+// Delete Lesson from Course (Admin only)
 const deleteLesson = asyncHandler(async (req, res) => {
   const course = await courseService.deleteLesson(
     req.params.id,
@@ -224,7 +211,8 @@ const getCourseById = asyncHandler(async (req, res) => {
 module.exports = {
   sendCourseReceipt,
   createCourse,
-  getMyCourses,
+  getAdminCourses,
+  getMyCourses: getAdminCourses,
   updateCourse,
   deleteCourse,
   addLesson,
