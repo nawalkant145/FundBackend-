@@ -42,7 +42,8 @@ const initiateCall = async (callerId, { receiverId, callType, type, chatId }) =>
   const caller = await User.findById(callerId);
   const receiver = await User.findById(receiverId);
   if (!receiver) throw new ApiError(404, "Receiver not found");
-  if (caller.verificationLevel < 2 || receiver.verificationLevel < 2) {
+  const isPhoneVerified = (user) => !!(user?.phoneVerified || user?.isPhoneVerified || (user?.verificationLevel || 0) >= 1);
+  if (!isPhoneVerified(caller) || !isPhoneVerified(receiver)) {
     throw new ApiError(403, "Both users must be phone-verified to call");
   }
   if (caller.role === "investor" && !caller.isProActive()) {
