@@ -294,6 +294,43 @@ const validateChangePassword = (data) => {
   if (errors.length) throw new ApiError(400, "Validation failed", errors);
 };
 
+// ─── Initiate Signup (temporary session — no account created) ──────────────
+// Same field rules as validateRegister but called separately so the controller
+// can return a signupSessionId instead of a JWT-authenticated user.
+
+const validateInitiateSignup = (data) => {
+  const errors = [];
+  const { name, username, email, password, role, phone } = data;
+
+  if (!name || typeof name !== "string" || name.trim().length < 2) {
+    errors.push("Name must be at least 2 characters");
+  }
+  if (!username || !/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+    errors.push("Username must be 3-20 characters (letters, numbers, underscore)");
+  }
+  if (!email || !isValidEmail(String(email))) {
+    errors.push("Valid email is required");
+  }
+
+  validatePasswordStrength(password, errors);
+
+  if (!role || !["founder", "investor"].includes(role)) {
+    errors.push("Role must be founder or investor");
+  }
+
+  const defaultCountry = data.country || "IN";
+  const normalizedPhone = normalizePhone(String(phone || ""), defaultCountry);
+  if (!phone || phone === "") {
+    errors.push("Phone number is required");
+  } else if (!normalizedPhone || !isValidPhone(phone, defaultCountry)) {
+    errors.push("Please enter a valid phone number for the selected country.");
+  } else {
+    data.phone = normalizedPhone;
+  }
+
+  if (errors.length) throw new ApiError(400, "Validation failed", errors);
+};
+
 // ─── Exports ───────────────────────────────────────────────────────────────
 
 /**
@@ -331,6 +368,7 @@ const normalizePhone = (phone, defaultCountry = "IN") => {
 module.exports = {
   validateRegister,
   validateLogin,
+  validateInitiateSignup,
   validateSendPreRegisterOtp,
   validateVerifyPreRegisterOtp,
   validateVerifyEmailOtp,
@@ -343,3 +381,4 @@ module.exports = {
   isValidEmail,
   normalizePhone,
 };
+

@@ -51,4 +51,31 @@ const authenticate = asyncHandler(async (req, res, next) => {
   next();
 });
 
-module.exports = { authenticate };
+// Like authenticate, but does NOT throw if no token is present.
+// Populates req.user if a valid token exists; sets req.user = null otherwise.
+// Used for routes that are accessible to both authenticated and unauthenticated users.
+const optionalAuthenticate = async (req, res, next) => {
+  try {
+    let token;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    }
+    if (!token && req.cookies?.accessToken) {
+      token = req.cookies.accessToken;
+    }
+    if (!token) {
+      req.user = null;
+      return next();
+    }
+    const { verifyAccessToken } = require("../utils/generateToken");
+    const decoded = verifyAccessToken(token);
+    const user = await User.findById(decoded._id).select("-password -refreshToken");
+    req.user = user || null;
+  } catch {
+    req.user = null;
+  }
+  next();
+};
+
+module.exports = { authenticate, optionalAuthenticate };
