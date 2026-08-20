@@ -37,10 +37,16 @@ const activeBoosts = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, { boosts }, "Active boosts"));
 });
 
+const diagnostics = asyncHandler(async (req, res) => {
+  const data = await boostService.getDiagnostics(req.params.investorId);
+  res.json(new ApiResponse(200, data, "Boost diagnostics"));
+});
+
 module.exports = {
   tiers,
   createOrder,
   verifyPayment,
   myBoosts,
   activeBoosts,
+  diagnostics,
 };
