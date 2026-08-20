@@ -47,6 +47,36 @@ const kycSchema = new mongoose.Schema(
         timestamp: { type: Date, default: Date.now },
       },
     ],
+
+    // --- DigiLocker automatic verification fields (additive) -----------------
+    verificationMethod: {
+      type: String,
+      enum: ["manual", "digilocker"],
+      default: "manual",
+      index: true,
+    },
+    digilockerReference: { type: String, default: "" }, // digilocker_id from token exchange
+    digilockerStatus: {
+      type: String,
+      enum: ["none", "initiated", "verifying", "completed", "failed"],
+      default: "none",
+    },
+    documentsVerified: [{ type: String }], // e.g. ["aadhaar", "pan"]
+    verificationResult: {
+      type: String,
+      enum: ["passed", "failed", "manual_review_required"],
+      default: "passed",
+    },
+    manualReviewRequired: { type: Boolean, default: false },
+    failureReason: { type: String, default: "" },
+    matchConfidence: { type: Number, default: 0 }, // 0-100, name-similarity score
+    extractedData: {
+      name: { type: String, default: "" },
+      dob: { type: String, default: "" },
+      gender: { type: String, default: "" },
+      aadhaarMasked: { type: String, default: "" },
+      panNumber: { type: String, default: "" },
+    },
   },
   { timestamps: true }
 );

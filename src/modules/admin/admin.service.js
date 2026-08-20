@@ -657,6 +657,8 @@ const getOperationalKpis = async () => {
     level2Count,
     level3Count,
     level4Count,
+    pendingDigilockerReview,
+    totalDigilockerVerified,
   ] = await Promise.all([
     KYC.countDocuments({ verificationStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] } }),
     Company.countDocuments({ verificationStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] } }),
@@ -673,6 +675,10 @@ const getOperationalKpis = async () => {
     User.countDocuments({ verificationLevel: 2 }),
     User.countDocuments({ verificationLevel: 3 }),
     User.countDocuments({ verificationLevel: 4 }),
+    // DigiLocker exceptions awaiting human review (name/DOB below match threshold)
+    KYC.countDocuments({ verificationMethod: "digilocker", manualReviewRequired: true, verificationStatus: "under_review" }),
+    // DigiLocker submissions auto-approved without any human touch
+    KYC.countDocuments({ verificationMethod: "digilocker", verificationStatus: "approved" }),
   ]);
 
   return {
@@ -688,12 +694,17 @@ const getOperationalKpis = async () => {
         level2: pendingPersonal,
         level3: pendingFounder,
         level4: pendingInvestor,
+        digilockerManualReview: pendingDigilockerReview,
       },
       levelDistribution: {
         level1: level1Count,
         level2: level2Count,
         level3: level3Count,
         level4: level4Count,
+      },
+      digilocker: {
+        pendingManualReview: pendingDigilockerReview,
+        autoVerified: totalDigilockerVerified,
       },
     },
   };
@@ -718,7 +729,35 @@ const getPendingQueues = async (queueType = "personal") => {
       .sort({ updatedAt: -1 });
   }
 
-  // Personal KYC Queue
+  if (queueType === "digilocker" || queueType === "manual_review") {
+    // DigiLocker exceptions only — auto-approved records never land here since
+    // they don't need a human decision. Includes the account's on-file name/DOB
+    // alongside the DigiLocker-extracted data and match score for comparison.
+    const records = await KYC.find({
+      verificationMethod: "digilocker",
+      manualReviewRequired: true,
+      verificationStatus: "under_review",
+    })
+      .populate("userId", "name email role phone avatar dateOfBirth verificationLevel")
+      .sort({ createdAt: 1 });
+
+    return records.map((r) => ({
+      _id: r._id,
+      userId: r.userId,
+      referenceId: r.referenceId,
+      matchConfidence: r.matchConfidence,
+      documentsVerified: r.documentsVerified,
+      extractedData: r.extractedData,
+      accountOnFile: {
+        name: r.userId?.name || "",
+        dateOfBirth: r.userId?.dateOfBirth || null,
+      },
+      digilockerStatus: r.digilockerStatus,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  // Personal KYC Queue (manual uploads + any DigiLocker record still under_review)
   const pendingKycDocs = await KYC.find({
     verificationStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] },
   })
@@ -753,6 +792,11 @@ const approveDocuments = async (targetId, adminId, notes = "") => {
     kycDoc.reviewedBy = adminId;
     kycDoc.reviewedAt = new Date();
     if (notes) kycDoc.reviewNotes = notes;
+    // Clear the manual-review flag if an admin is now clearing a DigiLocker exception
+    if (kycDoc.verificationMethod === "digilocker") {
+      kycDoc.manualReviewRequired = false;
+      kycDoc.verificationResult = "passed";
+    }
 
     kycDoc.history.push({
       action: "approved",
@@ -813,6 +857,11 @@ const rejectDocuments = async (targetId, reason, adminId, notes = "") => {
     kycDoc.reviewNotes = notes || "";
     kycDoc.reviewedBy = adminId;
     kycDoc.reviewedAt = new Date();
+    if (kycDoc.verificationMethod === "digilocker") {
+      kycDoc.manualReviewRequired = false;
+      kycDoc.verificationResult = "failed";
+      kycDoc.failureReason = reason;
+    }
 
     kycDoc.history.push({
       action: "rejected",
@@ -871,6 +920,14 @@ const approveCompanyKYC = async (companyId, adminId) => {
   company.reviewedAt = new Date();
   await company.save();
 
+  const user = await User.findById(company.founderId);
+  if (user) {
+    user.companyVerificationStatus = "approved";
+    user.isBusinessVerified = true;
+    user.recomputeVerificationLevel();
+    await user.save({ validateBeforeSave: false });
+  }
+
   kycEvents.emit("company:approved", { userId: company.founderId, companyId: company._id, adminId });
   return company;
 };
@@ -885,7 +942,14 @@ const rejectCompanyKYC = async (companyId, reason, adminId) => {
   company.reviewedAt = new Date();
   await company.save();
 
-  await User.findByIdAndUpdate(company.founderId, { companyVerificationStatus: "rejected" });
+  const user = await User.findById(company.founderId);
+  if (user) {
+    user.companyVerificationStatus = "rejected";
+    user.isBusinessVerified = false;
+    user.recomputeVerificationLevel();
+    await user.save({ validateBeforeSave: false });
+  }
+
   return company;
 };
 
@@ -898,6 +962,15 @@ const approveInvestorKYC = async (investmentKycId, adminId) => {
   invKyc.reviewedBy = adminId;
   invKyc.reviewedAt = new Date();
   await invKyc.save();
+
+  const user = await User.findById(invKyc.investorId);
+  if (user) {
+    user.investmentVerificationStatus = "approved";
+    user.isInvestorProfileVerified = true;
+    user.isOrganizationVerified = !!invKyc.isCorporateEntity;
+    user.recomputeVerificationLevel();
+    await user.save({ validateBeforeSave: false });
+  }
 
   kycEvents.emit("investmentKyc:approved", { userId: invKyc.investorId, adminId });
   return invKyc;
@@ -913,8 +986,26 @@ const rejectInvestorKYC = async (investmentKycId, reason, adminId) => {
   invKyc.reviewedAt = new Date();
   await invKyc.save();
 
-  await User.findByIdAndUpdate(invKyc.investorId, { investmentVerificationStatus: "rejected" });
+  const user = await User.findById(invKyc.investorId);
+  if (user) {
+    user.investmentVerificationStatus = "rejected";
+    user.isInvestorProfileVerified = false;
+    user.isOrganizationVerified = false;
+    user.recomputeVerificationLevel();
+    await user.save({ validateBeforeSave: false });
+  }
+
   return invKyc;
+};
+
+const completeDueDiligence = async (userId, adminId, notes = "") => {
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "User not found");
+
+  user.dueDiligenceStatus = "completed";
+  await user.save({ validateBeforeSave: false });
+
+  return { message: "Due Diligence marked as completed", user: user.toSafeJSON() };
 };
 
 // ─── Reports ────────────────────────────────────
@@ -1332,6 +1423,7 @@ module.exports = {
   rejectCompanyKYC,
   approveInvestorKYC,
   rejectInvestorKYC,
+  completeDueDiligence,
   listReports,
   resolveReport,
   listAllComments,

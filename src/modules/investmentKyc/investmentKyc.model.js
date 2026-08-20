@@ -8,6 +8,27 @@ const investmentKycSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    investorType: {
+      type: String,
+      enum: ["individual", "angel", "hni", "vc", "family_office", "corporate", "other"],
+      default: "individual",
+    },
+    
+    // Organization / Firm Verification (if investing via entity)
+    isCorporateEntity: { type: Boolean, default: false },
+    entityDetails: {
+      companyName: { type: String, default: "" },
+      registrationType: { type: String, default: "" }, // Company, LLP, Firm
+      CIN_LLPIN: { type: String, default: "" },
+      companyPAN: { type: String, default: "" },
+      GSTIN: { type: String, default: "" },
+      registeredAddress: { type: String, default: "" },
+      officialBusinessEmail: { type: String, default: "" },
+      boardResolutionDoc: { type: String, default: "" },
+      authorizedPersonName: { type: String, default: "" },
+      authorizedPersonDesignation: { type: String, default: "" },
+    },
+
     addressProof: {
       docType: { type: String, enum: ["utility_bill", "bank_statement", "passport", "aadhaar"], required: true },
       docUrl: { type: String, required: true },
@@ -24,6 +45,18 @@ const investmentKycSchema = new mongoose.Schema(
       declaredAmount: { type: Number, default: 0 },
       declarationDocUrl: { type: String, default: "" },
     },
+
+    // Investment Profile Declarations
+    investmentProfile: {
+      preferredSectors: [{ type: String }],
+      typicalTicketSizeMin: { type: Number, default: 0 },
+      typicalTicketSizeMax: { type: Number, default: 0 },
+      preferredGeography: [{ type: String }],
+      investmentStage: [{ type: String }],
+      riskDeclarationAccepted: { type: Boolean, default: false },
+      declarationAcceptedAt: { type: Date },
+    },
+
     amlStatus: {
       type: String,
       enum: ["passed", "flagged", "pending"],

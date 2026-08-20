@@ -6,6 +6,8 @@ const RiskAssessment = require("../risk/risk.model");
 const User = require("../user/user.model");
 const ApiError = require("../../utils/ApiError");
 const kycEvents = require("../../events/kyc.events");
+const digilockerService = require("../../services/digilocker.service");
+const { matchIdentity } = require("../../utils/identityMatcher");
 
 // Unified Level Status Card & Progress Calculator
 const getVerificationStatus = async (userId) => {
@@ -28,6 +30,14 @@ const getVerificationStatus = async (userId) => {
     verifiedBadge: user.verifiedBadge,
     verifiedAt: user.verifiedAt,
     profileCompleteness: user.profileCompleteness || 20,
+    badges: {
+      isIdentityVerified: user.isIdentityVerified || user.verificationLevel >= 2,
+      isBusinessVerified: user.isBusinessVerified || (user.role === "founder" && user.companyVerificationStatus === "approved"),
+      isOrganizationVerified: user.isOrganizationVerified || (user.role === "investor" && user.investmentVerificationStatus === "approved"),
+      isInvestorProfileVerified: user.isInvestorProfileVerified || (user.role === "investor" && user.investmentVerificationStatus === "approved"),
+      isStartupProfileComplete: user.profileCompleteness >= 70,
+      dueDiligenceStatus: user.dueDiligenceStatus || "none",
+    },
     statusCard: {
       emailVerified: {
         level: 1,
@@ -42,23 +52,29 @@ const getVerificationStatus = async (userId) => {
       identityVerified: {
         level: 2,
         status: kycDoc?.verificationStatus || user.kycStatus || user.documents?.status || "none",
-        verified: user.verificationLevel >= 2,
+        verified: user.isIdentityVerified || user.verificationLevel >= 2,
         rejectionReason: kycDoc?.rejectionReason || user.documents?.rejectionReason || "",
         badge: user.verifiedBadge,
         submittedAt: kycDoc?.createdAt || user.documents?.submittedAt,
+        verificationMethod: kycDoc?.verificationMethod || "manual",
+        manualReviewRequired: kycDoc?.manualReviewRequired || false,
       },
       founderVerification: {
         level: 3,
         status: user.companyVerificationStatus || companyDoc?.verificationStatus || "none",
-        verified: user.verificationLevel >= 3 && user.companyVerificationStatus === "approved",
+        verified: user.isBusinessVerified || (user.role === "founder" && user.companyVerificationStatus === "approved"),
         companyName: companyDoc?.companyName || user.companyName || "",
         rejectionReason: companyDoc?.rejectionReason || "",
       },
       investmentKyc: {
         level: 4,
         status: user.investmentVerificationStatus || investorKycDoc?.verificationStatus || "none",
-        verified: user.verificationLevel >= 4 && user.investmentVerificationStatus === "approved",
+        verified: user.isInvestorProfileVerified || (user.role === "investor" && user.investmentVerificationStatus === "approved"),
         rejectionReason: investorKycDoc?.rejectionReason || "",
+      },
+      dueDiligence: {
+        status: user.dueDiligenceStatus || "none",
+        completed: user.dueDiligenceStatus === "completed",
       },
       riskStatus: {
         level: 5,
@@ -76,7 +92,7 @@ const generateReferenceId = () => {
   return `KYC-${dateStr}-${rand}`;
 };
 
-// Phase 2 Personal Identity Submission
+// Phase 2 Personal Identity Submission (manual upload path — unchanged)
 const submitPersonalKyc = async (userId, { documentType, documentNumber, documentFront, documentBack, selfie }) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
@@ -117,6 +133,7 @@ const submitPersonalKyc = async (userId, { documentType, documentNumber, documen
     documentBack: documentBack || "",
     selfie,
     verificationStatus: "under_review",
+    verificationMethod: "manual",
     history: [
       {
         action: "submitted",
@@ -142,7 +159,7 @@ const submitPersonalKyc = async (userId, { documentType, documentNumber, documen
   return kyc;
 };
 
-// Resubmit Personal Identity Docs
+// Resubmit Personal Identity Docs (manual upload path — unchanged)
 const resubmitPersonalKyc = async (userId, { documentType, documentNumber, documentFront, documentBack, selfie }) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
@@ -170,6 +187,7 @@ const resubmitPersonalKyc = async (userId, { documentType, documentNumber, docum
     documentBack: documentBack || "",
     selfie,
     verificationStatus: "under_review",
+    verificationMethod: "manual",
     attemptsCount,
     history: [
       ...(prevKyc?.history || []),
@@ -200,12 +218,14 @@ const resubmitPersonalKyc = async (userId, { documentType, documentNumber, docum
 
 // Fetch KYC Submission Details by ID
 const getKycById = async (id) => {
-  const kyc = await KYC.findById(id).populate("userId", "name email role phone avatar companyName verificationLevel").populate("history.performedBy", "name email role");
+  const kyc = await KYC.findById(id)
+    .populate("userId", "name email role phone avatar companyName verificationLevel")
+    .populate("history.performedBy", "name email role");
   if (!kyc) throw new ApiError(404, "KYC Submission record not found");
   return kyc;
 };
 
-// Phase 3 Founder Company Verification Submission
+// Phase 3 Founder Company Verification Submission (unchanged)
 const submitCompanyKyc = async (userId, { companyName, CIN, GST, registrationCertificate, companyPAN, startupIndiaCert, businessEmail }) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
@@ -234,7 +254,7 @@ const submitCompanyKyc = async (userId, { companyName, CIN, GST, registrationCer
   return company;
 };
 
-// Phase 4 Investor Transaction KYC Submission
+// Phase 4 Investor Transaction KYC Submission (unchanged)
 const submitInvestmentKyc = async (userId, { addressProof, bankAccount, incomeProofUrl, netWorthDeclaration }) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
@@ -267,6 +287,212 @@ const submitInvestmentKyc = async (userId, { addressProof, bankAccount, incomePr
   return investorKyc;
 };
 
+// ============================================================================
+// DigiLocker automatic KYC verification
+// ============================================================================
+
+// Step 1 — user clicks "Verify with DigiLocker"
+// When called during signup (before account creation), signupSessionId is provided.
+// When called by an authenticated user, userId is provided (existing post-account KYC).
+const initiateDigilockerVerification = async (userId, { signupSessionId } = {}) => {
+  /* === PRE-ACCOUNT SIGNUP FLOW (Commented out — uncomment when mandatory pre-account KYC is enabled) ===
+  if (signupSessionId) {
+    const signupSessionService = require("../auth/signupSession.service");
+    const session = await signupSessionService.getSession(signupSessionId);
+    const { url, state } = digilockerService.getAuthorizationUrl(null, { signupSessionId });
+    return { redirectUrl: url, state };
+  }
+  =================================================================================================== */
+
+  // Existing post-account flow — user already has a MongoDB User record
+  const user = await User.findById(userId);
+
+  if (!user) throw new ApiError(404, "User not found");
+
+  const { url, state } = digilockerService.getAuthorizationUrl(userId);
+
+  await KYC.create({
+    userId,
+    referenceId: generateReferenceId(),
+    documentType: "aadhar", // placeholder; DigiLocker may supply multiple doc types
+    documentFront: "digilocker-pending", // required field on schema; not used for this method
+    selfie: "digilocker-pending",
+    verificationStatus: "under_review",
+    verificationMethod: "digilocker",
+    digilockerStatus: "initiated",
+    history: [{ action: "submitted", performedBy: userId, notes: "DigiLocker verification initiated" }],
+  });
+
+  user.kycStatus = "digilocker_pending";
+  await user.save({ validateBeforeSave: false });
+
+  return { redirectUrl: url, state };
+};
+
+
+// Step 2 — DigiLocker redirects back with ?code=...&state=...
+const handleDigilockerCallback = async ({ code, state }) => {
+  if (!code) throw new ApiError(400, "Missing authorization code from DigiLocker");
+
+  const statePayload = digilockerService.verifyState(state);
+  const { userId, signupSessionId } = statePayload;
+
+  /* === PRE-ACCOUNT SIGNUP FLOW (Commented out — uncomment when mandatory pre-account KYC is enabled) ===
+  if (signupSessionId) {
+    const signupSessionService = require("../auth/signupSession.service");
+    let tokenResponse;
+    try {
+      tokenResponse = await digilockerService.exchangeCodeForToken(code);
+    } catch (err) {
+      return { status: "failed", signupSessionId, reason: "OAuth token exchange failed" };
+    }
+    const { extractedData, documentsVerified } = await digilockerService.retrieveAndParseDocuments(
+      tokenResponse.access_token
+    );
+    if (documentsVerified.length === 0) {
+      return { status: "failed", signupSessionId, reason: "No documents returned by DigiLocker" };
+    }
+    let session;
+    try {
+      session = await signupSessionService.getSession(signupSessionId);
+    } catch {
+      return { status: "failed", signupSessionId, reason: "Signup session expired" };
+    }
+    const match = matchIdentity({
+      accountName: session.accountData.name,
+      accountDob: null,
+      digilockerName: extractedData.name,
+      digilockerDob: extractedData.dob,
+    });
+    if (!match.passed) {
+      return { status: "failed", signupSessionId, reason: "Identity name mismatch" };
+    }
+    try {
+      const result = await signupSessionService.finalizeAccountCreation(signupSessionId, {
+        kycDetails: { extractedData, documentsVerified, digilockerReference: tokenResponse.digilocker_id || "" },
+      });
+      return { status: "approved", ...result };
+    } catch (err) {
+      return { status: "failed", signupSessionId, reason: err.message };
+    }
+  }
+  =================================================================================================== */
+
+
+  // ── POST-ACCOUNT FLOW (Existing Authenticated User) ──────────────────────
+  // The user already has a MongoDB User record (they are doing KYC post-signup).
+  const kyc = await KYC.findOne({ userId, verificationMethod: "digilocker" }).sort({ createdAt: -1 });
+  if (!kyc) throw new ApiError(404, "No pending DigiLocker verification found for this user");
+
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "User not found");
+
+  kyc.digilockerStatus = "verifying";
+  await kyc.save();
+
+  let tokenResponse;
+  try {
+    tokenResponse = await digilockerService.exchangeCodeForToken(code);
+  } catch (err) {
+    kyc.digilockerStatus = "failed";
+    kyc.verificationResult = "failed";
+    kyc.failureReason = "OAuth token exchange failed";
+    await kyc.save();
+    user.kycStatus = "rejected";
+    await user.save({ validateBeforeSave: false });
+    throw err;
+  }
+
+  const { extractedData, documentsVerified } = await digilockerService.retrieveAndParseDocuments(
+    tokenResponse.access_token
+  );
+
+  const match = matchIdentity({
+    accountName: user.name,
+    accountDob: user.dateOfBirth || user.dob,
+    digilockerName: extractedData.name,
+    digilockerDob: extractedData.dob,
+  });
+
+  kyc.digilockerReference = tokenResponse.digilocker_id || "";
+  kyc.documentsVerified = documentsVerified;
+  kyc.extractedData = {
+    name: extractedData.name,
+    dob: extractedData.dob,
+    gender: extractedData.gender,
+    panNumber: extractedData.panNumber,
+    aadhaarMasked: extractedData.aadhaarMasked || "",
+  };
+  kyc.matchConfidence = match.nameScore;
+
+  if (documentsVerified.length === 0) {
+    kyc.digilockerStatus = "failed";
+    kyc.verificationResult = "failed";
+    kyc.failureReason = "No documents were returned by DigiLocker";
+    kyc.manualReviewRequired = false;
+    await kyc.save();
+
+    user.kycStatus = "rejected";
+    await user.save({ validateBeforeSave: false });
+
+    kycEvents.emit("kyc:rejected", { userId, reason: kyc.failureReason, adminId: null });
+    return { status: "failed", kyc };
+  }
+
+  if (match.passed) {
+    kyc.digilockerStatus = "completed";
+    kyc.verificationStatus = "approved";
+    kyc.verificationResult = "passed";
+    kyc.manualReviewRequired = false;
+    kyc.verifiedAt = new Date();
+    kyc.history.push({ action: "approved", notes: "Auto-approved via DigiLocker", timestamp: new Date() });
+    await kyc.save();
+
+    kycEvents.emit("kyc:approved", { userId, adminId: null });
+    return { status: "approved", kyc };
+  }
+
+  // Name/DOB didn't clear the auto-approval bar — route to human review, not a rejection.
+  kyc.digilockerStatus = "completed";
+  kyc.verificationStatus = "under_review";
+  kyc.verificationResult = "manual_review_required";
+  kyc.manualReviewRequired = true;
+  await kyc.save();
+
+  user.kycStatus = "manual_review";
+  await user.save({ validateBeforeSave: false });
+
+  return { status: "manual_review", kyc };
+};
+
+
+// Step 3 — frontend polls this while waiting for the callback to complete
+const getDigilockerStatus = async (userId) => {
+  const kyc = await KYC.findOne({ userId, verificationMethod: "digilocker" }).sort({ createdAt: -1 });
+  if (!kyc) throw new ApiError(404, "No DigiLocker verification found for this user");
+
+  return {
+    digilockerStatus: kyc.digilockerStatus,
+    verificationStatus: kyc.verificationStatus,
+    verificationResult: kyc.verificationResult,
+    manualReviewRequired: kyc.manualReviewRequired,
+    matchConfidence: kyc.matchConfidence,
+    documentsVerified: kyc.documentsVerified,
+    failureReason: kyc.failureReason,
+  };
+};
+
+// Fallback — user opts into (or is routed to) manual upload after a DigiLocker failure
+const fallbackToManual = async (userId) => {
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "User not found");
+
+  user.kycStatus = "none";
+  await user.save({ validateBeforeSave: false });
+
+  return { message: "You can now submit documents manually." };
+};
+
 module.exports = {
   getVerificationStatus,
   submitPersonalKyc,
@@ -274,4 +500,8 @@ module.exports = {
   getKycById,
   submitCompanyKyc,
   submitInvestmentKyc,
+  initiateDigilockerVerification,
+  handleDigilockerCallback,
+  getDigilockerStatus,
+  fallbackToManual,
 };
