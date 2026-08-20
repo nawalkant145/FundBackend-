@@ -10,11 +10,28 @@ const companySchema = new mongoose.Schema(
     },
     companyName: { type: String, required: true, trim: true },
     CIN: { type: String, required: true, trim: true, index: true },
-    GST: { type: String, default: "", trim: true },
-    registrationCertificate: { type: String, required: true },
     companyPAN: { type: String, required: true, trim: true },
+    registrationCertificate: { type: String, required: true },
+    
+    // Optional Supporting Verification Documents (Non-blocking for early stage)
+    GST: { type: String, default: "", trim: true },
+    udyamNumber: { type: String, default: "", trim: true }, // MSME registration number
     startupIndiaCert: { type: String, default: "" },
+    moaUrl: { type: String, default: "" }, // Memorandum of Association
+    aoaUrl: { type: String, default: "" }, // Articles of Association
+    
+    // Company Profile & Entity Details
+    registeredOfficeAddress: { type: String, default: "" },
+    website: { type: String, default: "" },
     businessEmail: { type: String, required: true, lowercase: true, trim: true },
+    directors: [
+      {
+        name: { type: String, default: "" },
+        din: { type: String, default: "" }, // Director Identification Number
+        pan: { type: String, default: "" },
+        email: { type: String, default: "" },
+      },
+    ],
     isBusinessEmailVerified: { type: Boolean, default: false },
     businessEmailOtpHash: { type: String, select: false },
     businessEmailOtpExpires: { type: Date, select: false },
