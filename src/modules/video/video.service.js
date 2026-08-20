@@ -39,7 +39,8 @@ const uploadPitch = async (founderId, file, body) => {
   if (founder.role !== "founder") {
     throw new ApiError(403, "Only founders can upload pitches");
   }
-  if (founder.verificationLevel < 2) {
+  const isPhoneVerified = (u) => !!(u?.phoneVerified || u?.isPhoneVerified || (u?.verificationLevel || 0) >= 1);
+  if (!isPhoneVerified(founder)) {
     throw new ApiError(403, "Verify phone before uploading");
   }
 
@@ -51,13 +52,7 @@ const uploadPitch = async (founderId, file, body) => {
     throw new ApiError(400, `Max ${maxPitches} active pitches allowed`);
   }
 
-  const activePitch = await Video.findOne({ founderId, status: "active" });
-  if (activePitch) {
-    throw new ApiError(
-      400,
-      "You already have an active pitch. Pause it first.",
-    );
-  }
+  // Removed one-active-pitch restriction to allow multiple active pitches per founder
 
   const uploaded = await uploadVideoToCloudinary(file.path);
 
@@ -159,7 +154,13 @@ const buildFeedQuery = async (userId) => {
   // Use $and array so cursor conditions appended later compose cleanly.
   const $and = [
     { status: "active" },
-    { expiresAt: { $gt: new Date() } },
+    {
+      $or: [
+        { expiresAt: { $exists: false } },
+        { expiresAt: null },
+        { expiresAt: { $gt: new Date() } },
+      ],
+    },
     { _id: { $nin: seen } },
     { founderId: { $nin: blocked } },
   ];
@@ -192,8 +193,137 @@ const getFeed = async (investorId, { cursor, limit = FEED_PAGE_SIZE } = {}) => {
   // buildFeedQuery now also returns preferredIndustries for soft-sort below.
   const { preferredIndustries = [], ...baseQuery } = await buildFeedQuery(investorId);
 
-  // Cursor-based pagination using a compound cursor (createdAt + _id) that
-  // matches the sort order, preventing empty pages on scroll.
+  // ─────────────────────────────────────────────────────────────────
+  // GAP 2 + GAP 3 — Guaranteed top placement + expired-boost filter
+  // ─────────────────────────────────────────────────────────────────
+  // Strategy: fetch eligible boosted pitches FIRST and prepend them to the
+  // normal feed. This guarantees position 0 regardless of cursor state or
+  // pagination — a sort-based approach alone cannot guarantee this because
+  // cursor conditions exclude items outside the current page window.
+  //
+  // "Eligible boosted pitch" means ALL of the following:
+  //   1. Boost status === "active"
+  //   2. Boost expiresAt > now                   (GAP 3: not expired)
+  //   3. Investor is NOT in Boost.shownTo[]       (GAP 1: not yet promoted)
+  //   4. Video passes all existing feed eligibility rules
+  //      (active, not expired, not blocked, not-interested, visibility)
+  //
+  // After building the boosted section:
+  //   - recordShownTo() fires in the background (fire-and-forget, GAP 1)
+  //   - expireStale() fires in the background on first page (GAP 3 cleanup)
+  // ─────────────────────────────────────────────────────────────────
+
+  const now = new Date();
+
+  // Trigger background stale-boost cleanup on first-page loads so the DB
+  // stays in sync. Non-blocking — feed response is NOT delayed by this.
+  if (!cursor) {
+    const { expireStale } = require("../boost/boost.service");
+    expireStale().catch(() => {});
+  }
+
+  let boostedSection = [];
+  let boostedVideoIds = new Set();
+
+  // Only prepend boosted pitches on the first page (no cursor).
+  // On subsequent pages the investor has already received the boosted section.
+  if (!cursor) {
+    try {
+      const { getActiveBoostedForFeed, recordShownTo } = require("../boost/boost.service");
+      const activeBoosted = await getActiveBoostedForFeed(investorId);
+
+      if (activeBoosted.length > 0) {
+        const boostedVidIds = activeBoosted.map((b) => b.videoId);
+
+        // Apply ALL existing feed eligibility rules to the boosted videos.
+        // We reuse baseQuery (which already encodes blocked/not-interested/
+        // visibility/active/expiry constraints) so boosting NEVER bypasses
+        // any existing rule.
+        //
+        // We build a modified query that restricts to the candidate boosted
+        // video IDs AND also enforces boostedUntil > now (GAP 3).
+        const boostedQuery = {
+          $and: [
+            ...(baseQuery.$and || []),
+            { _id: { $in: boostedVidIds } },
+            // GAP 3 — Runtime expired-boost guard.
+            // If boostedUntil has passed (before cron/lazy cleanup fires)
+            // the pitch must NOT receive boost priority.
+            { isBoosted: true },
+            { boostedUntil: { $gt: now } },
+          ],
+        };
+
+        let boostedVideos;
+        if (preferredIndustries.length > 0) {
+          boostedVideos = await Video.aggregate([
+            { $match: boostedQuery },
+            {
+              $addFields: {
+                prefMatch: {
+                  $cond: [{ $in: ["$industry", preferredIndustries] }, 1, 0],
+                },
+              },
+            },
+            { $sort: { prefMatch: -1, createdAt: -1, _id: -1 } },
+            {
+              $lookup: {
+                from: "users",
+                localField: "founderId",
+                foreignField: "_id",
+                as: "_founderArr",
+              },
+            },
+            {
+              $addFields: {
+                founderId: { $mergeObjects: [{ $arrayElemAt: ["$_founderArr", 0] }] },
+              },
+            },
+            { $unset: ["_founderArr", "prefMatch"] },
+          ]);
+
+          const safeFields = ["_id", "name", "avatar", "companyName", "industry", "isVerified"];
+          boostedVideos = boostedVideos.map((v) => ({
+            ...v,
+            founderId: v.founderId
+              ? Object.fromEntries(safeFields.map((f) => [f, v.founderId[f]]))
+              : v.founderId,
+          }));
+        } else {
+          boostedVideos = await Video.find(boostedQuery)
+            .sort({ createdAt: -1, _id: -1 })
+            .populate("founderId", "name avatar companyName industry isVerified")
+            .lean();
+        }
+
+        if (boostedVideos.length > 0) {
+          boostedSection = boostedVideos;
+          boostedVideoIds = new Set(boostedVideos.map((v) => v._id.toString()));
+
+          // Fire-and-forget: record this investor as having seen each boost.
+          // Map video _id → boostId for the recordShownTo call.
+          const vidToBoost = {};
+          activeBoosted.forEach((b) => {
+            vidToBoost[b.videoId.toString()] = b.boostId;
+          });
+          boostedVideos.forEach((v) => {
+            const bId = vidToBoost[v._id.toString()];
+            if (bId) {
+              recordShownTo(bId, investorId).catch(() => {});
+            }
+          });
+        }
+      }
+    } catch (e) {
+      // Never let a boost error break the normal feed.
+      console.warn("⚠️  Boost section build failed:", e.message);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Normal feed query — fills remaining slots after boosted section.
+  // ─────────────────────────────────────────────────────────────────
+  // Cursor-based pagination using a compound cursor (createdAt + _id).
   if (cursor) {
     let cursorCreatedAt = null;
     let cursorId = cursor;
@@ -220,70 +350,103 @@ const getFeed = async (investorId, { cursor, limit = FEED_PAGE_SIZE } = {}) => {
     }
   }
 
-  // Sort: boosted first → preferred-industry match (soft preference, not a hard
-  // filter so investors always see ALL active pitches) → newest → _id tiebreak.
-  // We use aggregation so we can add a computed `prefMatch` sort field without
-  // changing the stored documents.
-  let videos;
-  if (preferredIndustries.length > 0) {
-    videos = await Video.aggregate([
-      { $match: baseQuery },
-      {
-        $addFields: {
-          prefMatch: {
-            $cond: [
-              { $in: ["$industry", preferredIndustries] },
-              1,
-              0,
-            ],
-          },
-        },
-      },
-      { $sort: { isBoosted: -1, prefMatch: -1, createdAt: -1, _id: -1 } },
-      { $limit: limit + 1 },
-      {
-        $lookup: {
-          from: "users",
-          localField: "founderId",
-          foreignField: "_id",
-          as: "_founderArr",
-        },
-      },
-      {
-        $addFields: {
-          founderId: {
-            $mergeObjects: [
-              { $arrayElemAt: ["$_founderArr", 0] },
-            ],
-          },
-        },
-      },
-      { $unset: ["_founderArr", "prefMatch"] },
-    ]);
-
-    // Strip sensitive founder fields to match .populate() projection
-    const safeFields = ["_id", "name", "avatar", "companyName", "industry", "isVerified"];
-    videos = videos.map((v) => ({
-      ...v,
-      founderId: v.founderId
-        ? Object.fromEntries(safeFields.map((f) => [f, v.founderId[f]]))
-        : v.founderId,
-    }));
-  } else {
-    // No preferences set — simple find + sort
-    videos = await Video.find(baseQuery)
-      .sort({ isBoosted: -1, createdAt: -1, _id: -1 })
-      .limit(limit + 1)
-      .populate("founderId", "name avatar companyName industry isVerified")
-      .lean();
+  // Exclude already-boosted videos from the normal section to avoid duplicates.
+  if (boostedVideoIds.size > 0) {
+    const mongoose = require("mongoose");
+    const excludeIds = [...boostedVideoIds].map((id) => new mongoose.Types.ObjectId(id));
+    baseQuery.$and = [
+      ...(baseQuery.$and || []),
+      { _id: { $nin: excludeIds } },
+    ];
   }
 
-  const hasMore = videos.length > limit;
-  const items = hasMore ? videos.slice(0, limit) : videos;
-  // Compound cursor: encode both createdAt and _id of the last item
-  const lastItem = hasMore ? items[items.length - 1] : null;
-  const nextCursor = lastItem
-    ? `${new Date(lastItem.createdAt).toISOString()}_${lastItem._id}`
+  // Normal slots needed after the boosted section fills some positions.
+  const normalLimit = limit - boostedSection.length;
+
+  // Sort: preferred-industry match (soft preference) → newest → _id tiebreak.
+  // GAP 3: effectiveBoosted computed field respects boostedUntil expiry so
+  // expired-but-not-yet-cleaned-up pitches don't float to the top.
+  let videos;
+  if (normalLimit > 0) {
+    if (preferredIndustries.length > 0) {
+      videos = await Video.aggregate([
+        { $match: baseQuery },
+        {
+          $addFields: {
+            prefMatch: {
+              $cond: [
+                { $in: ["$industry", preferredIndustries] },
+                1,
+                0,
+              ],
+            },
+            // GAP 3 runtime guard: treat pitch as non-boosted if boostedUntil expired
+            effectiveBoosted: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$isBoosted", true] },
+                    { $gt: ["$boostedUntil", now] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+        { $sort: { effectiveBoosted: -1, prefMatch: -1, createdAt: -1, _id: -1 } },
+        { $limit: normalLimit + 1 },
+        {
+          $lookup: {
+            from: "users",
+            localField: "founderId",
+            foreignField: "_id",
+            as: "_founderArr",
+          },
+        },
+        {
+          $addFields: {
+            founderId: {
+              $mergeObjects: [
+                { $arrayElemAt: ["$_founderArr", 0] },
+              ],
+            },
+          },
+        },
+        { $unset: ["_founderArr", "prefMatch", "effectiveBoosted"] },
+      ]);
+
+      // Strip sensitive founder fields to match .populate() projection
+      const safeFields = ["_id", "name", "avatar", "companyName", "industry", "isVerified"];
+      videos = videos.map((v) => ({
+        ...v,
+        founderId: v.founderId
+          ? Object.fromEntries(safeFields.map((f) => [f, v.founderId[f]]))
+          : v.founderId,
+      }));
+    } else {
+      // No preferences set — simple find + sort
+      videos = await Video.find(baseQuery)
+        .sort({ isBoosted: -1, createdAt: -1, _id: -1 })
+        .limit(normalLimit + 1)
+        .populate("founderId", "name avatar companyName industry isVerified")
+        .lean();
+    }
+  } else {
+    videos = [];
+  }
+
+  // Merge: boosted section first, then normal section
+  const hasMore = videos.length > normalLimit;
+  const normalItems = hasMore ? videos.slice(0, normalLimit) : videos;
+  const items = [...boostedSection, ...normalItems];
+
+  // Compound cursor: encode both createdAt and _id of the last NORMAL item
+  // (the cursor skips boosted items since they're re-evaluated each time).
+  const lastNormal = normalItems.length > 0 ? normalItems[normalItems.length - 1] : null;
+  const nextCursor = lastNormal
+    ? `${new Date(lastNormal.createdAt).toISOString()}_${lastNormal._id}`
     : null;
 
   // Compute accurate comment counts for the videos in this page
@@ -893,6 +1056,7 @@ const togglePause = async (videoId, founderId) => {
 module.exports = {
   uploadPitch,
   getFeed,
+  buildFeedQuery,
   getTrending,
   searchVideos,
   getVideoById,
