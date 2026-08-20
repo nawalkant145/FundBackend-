@@ -32,5 +32,10 @@ router.use("/report", require("../modules/report/report.routes"));
 router.use("/activity", require("../modules/activity/activity.routes"));
 router.use("/admin", require("../modules/admin/admin.routes"));
 router.use("/course", require("../modules/course/course.routes"));
+router.use("/courses", require("../modules/course/course.routes"));
+router.use("/enrollment", require("../modules/enrollment/enrollment.routes"));
+router.use("/payment", require("../modules/payment/payment.routes"));
+router.use("/deal-room", require("../modules/dealRoom/dealRoom.routes"));
+router.use("/deal-rooms", require("../modules/dealRoom/dealRoom.routes"));
 
 module.exports = router;

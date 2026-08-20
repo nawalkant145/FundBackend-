@@ -43,12 +43,27 @@ router.get("/kyc/kpis", c.getOperationalKpis);
 router.get("/kyc/queue", c.getPendingQueues);
 router.get("/kyc/queue/:type", c.getPendingQueues);
 router.get("/documents/pending", c.pendingDocuments);
+
+// 🟢 Identity Verification Approval
 router.put("/documents/:userId/approve", c.approveDocuments);
 router.put("/documents/:userId/reject", c.rejectDocuments);
+router.put("/kyc/identity/:userId/approve", c.approveDocuments);
+router.put("/kyc/identity/:userId/reject", c.rejectDocuments);
+
+// 🔵 Business Verification Approval (Founder)
 router.put("/kyc/company/:companyId/approve", c.approveCompanyKYC);
 router.put("/kyc/company/:companyId/reject", c.rejectCompanyKYC);
+router.put("/kyc/business/:companyId/approve", c.approveCompanyKYC);
+router.put("/kyc/business/:companyId/reject", c.rejectCompanyKYC);
+
+// 🔵 Organization & 🟣 Investor Profile Verification Approval (Investor)
 router.put("/kyc/investor/:investmentKycId/approve", c.approveInvestorKYC);
 router.put("/kyc/investor/:investmentKycId/reject", c.rejectInvestorKYC);
+router.put("/kyc/organization/:investmentKycId/approve", c.approveInvestorKYC);
+router.put("/kyc/organization/:investmentKycId/reject", c.rejectInvestorKYC);
+
+// Due Diligence Status Completion
+router.put("/kyc/due-diligence/:userId/complete", c.completeDueDiligence);
 
 // Reports
 router.get("/reports", c.listReports);

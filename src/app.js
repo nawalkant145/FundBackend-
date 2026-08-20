@@ -11,6 +11,7 @@ const { globalLimiter } = require("./middlewares/rateLimit.middleware");
 const { notFound, errorHandler } = require("./middlewares/error.middleware");
 const apiRoutes = require("./routes");
 const investmentController = require("./modules/investment/investment.controller");
+const paymentController = require("./modules/payment/payment.controller");
 
 const ApiError = require("./utils/ApiError");
 
@@ -65,17 +66,16 @@ app.use(
   }),
 );
 
-// ─── Razorpay Webhook (raw body — must come BEFORE JSON parser) ──
+// Course Payment Razorpay Webhook
 app.post(
-  "/api/v1/investment/webhook/razorpay",
+  "/api/v1/payment/webhook/razorpay",
   express.raw({ type: "application/json", limit: "1mb" }),
-  investmentController.webhook,
+  paymentController.razorpayWebhook,
 );
-// Legacy alias
 app.post(
-  "/api/investment/webhook/razorpay",
+  "/api/payment/webhook/razorpay",
   express.raw({ type: "application/json", limit: "1mb" }),
-  investmentController.webhook,
+  paymentController.razorpayWebhook,
 );
 
 const path = require("path");
