@@ -199,12 +199,59 @@ const updateProfile = async (userId, updates) => {
   for (const k of SAFE_FIELDS)
     if (updates[k] !== undefined) sanitized[k] = updates[k];
 
+  const currentUser = await User.findById(userId).select("phone isPhoneVerified verificationLevel role notificationPrefs");
+  if (!currentUser) throw new ApiError(404, "User not found");
+
+  if (sanitized.notificationPrefs && typeof sanitized.notificationPrefs === "object") {
+    const isInvestor = currentUser.role === "investor";
+    const allowedKeys = isInvestor
+      ? [
+          "messages",
+          "investmentUpdates",
+          "savedPitchUpdates",
+          "followedFounders",
+          "pitchRecommendations",
+          "investmentStatus",
+          "weeklyDigest",
+          "accountSecurity",
+        ]
+      : [
+          "likes",
+          "saves",
+          "messages",
+          "investmentInterest",
+          "pitchExpiry",
+          "weeklyDigest",
+          "accountSecurity",
+        ];
+
+    const cleanPrefs = {};
+    for (const key of allowedKeys) {
+      if (sanitized.notificationPrefs[key] !== undefined) {
+        cleanPrefs[key] = Boolean(sanitized.notificationPrefs[key]);
+      }
+    }
+    sanitized.notificationPrefs = cleanPrefs;
+  }
+
+  if (sanitized.privacyPrefs && typeof sanitized.privacyPrefs === "object") {
+    const isInvestor = currentUser.role === "investor";
+    const allowedPrivacyKeys = isInvestor
+      ? ["verifiedOnly", "membersOnly", "dataMatching"]
+      : ["investorsOnly", "dataMatching"];
+
+    const cleanPrivacy = {};
+    for (const key of allowedPrivacyKeys) {
+      if (sanitized.privacyPrefs[key] !== undefined) {
+        cleanPrivacy[key] = Boolean(sanitized.privacyPrefs[key]);
+      }
+    }
+    sanitized.privacyPrefs = cleanPrivacy;
+  }
+
   // If the phone number is being changed, strip formatting and reset
   // isPhoneVerified so the new number is required to go through OTP.
   if (sanitized.phone !== undefined) {
-    const currentUser = await User.findById(userId).select("phone isPhoneVerified verificationLevel");
-    if (!currentUser) throw new ApiError(404, "User not found");
-
     // Normalize both sides before comparison
     const normalizedNew = String(sanitized.phone).replace(/[\s\-()\u00A0]/g, "");
     const normalizedOld = String(currentUser.phone || "").replace(/[\s\-()\u00A0]/g, "");

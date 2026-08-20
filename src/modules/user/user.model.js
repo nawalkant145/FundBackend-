@@ -62,24 +62,36 @@ const userSchema = new mongoose.Schema(
     country: { type: String, default: "" },
     bio: { type: String, default: "" },
 
-    // Verification Levels & Badges (Level 1 to 5)
-    isEmailVerified: { type: Boolean, default: false },
-    isPhoneVerified: { type: Boolean, default: false },
+    // Verification Levels & Badges (Canonical fields: emailVerified, phoneVerified, identityVerified, verificationLevel)
+    emailVerified: { type: Boolean, default: false },
+    phoneVerified: { type: Boolean, default: false },
+    identityVerified: { type: Boolean, default: false, index: true },
     verificationLevel: {
       type: Number,
-      default: 1,
-      min: 1,
+      default: 0,
+      min: 0,
       max: 5,
       index: true,
     },
     isVerified: { type: Boolean, default: false }, // legacy alias for blue tick
-    verifiedBadge: { type: Boolean, default: false }, // Level 2+ Personal ID verified blue tick
+    verifiedBadge: { type: Boolean, default: false }, // Level 1+ Personal ID verified blue tick
     verifiedAt: { type: Date },
+
+    // Launch-Level Multi-Badge State Flags
+    isBusinessVerified: { type: Boolean, default: false, index: true },
+    isOrganizationVerified: { type: Boolean, default: false, index: true },
+    isInvestorProfileVerified: { type: Boolean, default: false, index: true },
+    dueDiligenceStatus: {
+      type: String,
+      enum: ["none", "in_progress", "completed"],
+      default: "none",
+      index: true,
+    },
 
     // Dynamic Summary Status Flags
     kycStatus: {
       type: String,
-      enum: ["none", "pending", "under_review", "approved", "rejected", "resubmitted", "info_requested"],
+      enum: ["none", "pending", "under_review", "approved", "rejected", "resubmitted", "info_requested", "digilocker_pending", "manual_review"],
       default: "none",
       index: true,
     },
@@ -222,16 +234,35 @@ const userSchema = new mongoose.Schema(
 
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
+  // Guard: if the password is already a valid bcrypt hash, do not re-hash it.
+  // This allows signupSession.service.js to pass a pre-hashed password when
+  // finalizing account creation — bcrypt hashes start with $2a$, $2b$, or $2y$.
+  const BCRYPT_HASH_RE = /^\$2[ayb]\$\d{2}\$.{53}$/;
+  if (BCRYPT_HASH_RE.test(this.password)) return next();
   this.password = await bcrypt.hash(this.password, 12);
   next();
 });
+
+
+// Mongoose virtuals for legacy field names (single source of truth: emailVerified, phoneVerified, identityVerified)
+userSchema.virtual("isEmailVerified")
+  .get(function () { return !!this.emailVerified; })
+  .set(function (val) { this.emailVerified = !!val; });
+
+userSchema.virtual("isPhoneVerified")
+  .get(function () { return !!this.phoneVerified; })
+  .set(function (val) { this.phoneVerified = !!val; });
+
+userSchema.virtual("isIdentityVerified")
+  .get(function () { return !!this.identityVerified; })
+  .set(function (val) { this.identityVerified = !!val; });
 
 userSchema.methods.comparePassword = async function (candidate) {
   return bcrypt.compare(candidate, this.password);
 };
 
 userSchema.methods.toSafeJSON = function () {
-  const obj = this.toObject();
+  const obj = this.toObject({ virtuals: true });
   delete obj.password;
   delete obj.refreshToken;
   delete obj.loginAttempts;
@@ -242,32 +273,56 @@ userSchema.methods.toSafeJSON = function () {
   delete obj.phoneOtpExpires;
   delete obj.passwordResetTokenHash;
   delete obj.passwordResetExpires;
+
+  // Guarantee canonical and legacy field names are both present and synchronized
+  obj.emailVerified = !!(this.emailVerified);
+  obj.phoneVerified = !!(this.phoneVerified);
+  obj.identityVerified = !!(this.identityVerified);
+  obj.isEmailVerified = obj.emailVerified;
+  obj.isPhoneVerified = obj.phoneVerified;
+  obj.isIdentityVerified = obj.identityVerified;
+  obj.verificationLevel = this.verificationLevel || 0;
+
   return obj;
 };
 
 // Helper — recalculate verificationLevel & profileCompleteness dynamically
 userSchema.methods.recomputeVerificationLevel = function () {
-  let lvl = 1; // Default basic account
+  let lvl = 1; // Default basic account (Email & Mobile OTP verified)
   
-  // Level 2: Personal Identity Verified (Blue Badge)
-  if (this.kycStatus === "approved" || this.documents?.status === "approved") {
+  // Identity Verification (Level 2)
+  if (this.kycStatus === "approved" || this.documents?.status === "approved" || this.identityVerified) {
     lvl = 2;
+    this.identityVerified = true;
     this.verifiedBadge = true;
     this.isVerified = true;
     if (!this.verifiedAt) this.verifiedAt = new Date();
   } else {
+    this.identityVerified = false;
     this.verifiedBadge = false;
     this.isVerified = false;
   }
 
-  // Level 3: Founder Verification (Company Docs Approved)
-  if (lvl >= 2 && this.role === "founder" && this.companyVerificationStatus === "approved") {
-    lvl = 3;
+  // Founder Company Verification (Level 3)
+  if (this.role === "founder") {
+    if (this.companyVerificationStatus === "approved" || this.isBusinessVerified) {
+      this.isBusinessVerified = true;
+      lvl = Math.max(lvl, 3);
+    } else {
+      this.isBusinessVerified = false;
+    }
   }
 
-  // Level 4: Investor Verification (Transaction KYC Approved)
-  if (lvl >= 2 && this.role === "investor" && this.investmentVerificationStatus === "approved") {
-    lvl = 4;
+  // Investor Profile Verification & Organization Verification (Level 4)
+  if (this.role === "investor") {
+    if (this.investmentVerificationStatus === "approved" || this.isInvestorProfileVerified) {
+      this.isInvestorProfileVerified = true;
+      this.isOrganizationVerified = true;
+      lvl = Math.max(lvl, 4);
+    } else {
+      this.isInvestorProfileVerified = false;
+      this.isOrganizationVerified = false;
+    }
   }
 
   // Level 5: Risk Compliance (Manual hold or critical anomaly)
@@ -281,13 +336,13 @@ userSchema.methods.recomputeVerificationLevel = function () {
 
 userSchema.methods.calculateProfileCompleteness = function () {
   let score = 0;
-  if (this.isEmailVerified) score += 15;
-  if (this.isPhoneVerified) score += 15;
+  if (this.emailVerified) score += 15;
+  if (this.phoneVerified) score += 15;
   if (this.name && this.username) score += 15;
   if (this.avatar) score += 10;
   if (this.bio) score += 5;
 
-  if (this.kycStatus === "approved" || this.documents?.status === "approved") {
+  if (this.kycStatus === "approved" || this.documents?.status === "approved" || this.identityVerified) {
     score += 20;
   }
 
