@@ -1,4 +1,5 @@
 const Course = require("./course.model");
+const Enrollment = require("../enrollment/enrollment.model");
 const ApiError = require("../../utils/ApiError");
 const {
   uploadImageToCloudinary,
@@ -17,9 +18,9 @@ const slugify = (text) =>
     .replace(/\-\-+/g, "-");
 
 /**
- * Create a new course (Founder only)
+ * Create a new course (Admin only)
  */
-const createCourse = async (founderId, courseData, files = {}) => {
+const createCourse = async (adminId, courseData, files = {}) => {
   const { title, description, category, level, price, tags, status } = courseData;
 
   if (!title || title.trim().length < 3) {
@@ -56,14 +57,14 @@ const createCourse = async (founderId, courseData, files = {}) => {
   }
 
   const course = await Course.create({
-    founderId,
+    founderId: adminId,
     title: title.trim(),
     slug: `${slugify(title.trim())}-${Date.now().toString(36)}`,
     description: description || "",
     category: category || "General",
     level: level || "all-levels",
     price: price !== undefined ? Number(price) : 0,
-    status: status || "draft",
+    status: status || "published",
     tags: parsedTags,
     thumbnailUrl,
     thumbnailPublicId,
@@ -76,11 +77,11 @@ const createCourse = async (founderId, courseData, files = {}) => {
 };
 
 /**
- * Get courses created by the logged-in Founder
+ * Get all courses for Admin management
  */
-const getFounderCourses = async (founderId, query = {}) => {
-  const { status, limit = 20, page = 1 } = query;
-  const filter = { founderId, status: { $ne: "deleted" } };
+const getAdminCourses = async (query = {}) => {
+  const { status, limit = 50, page = 1 } = query;
+  const filter = { status: { $ne: "deleted" } };
 
   if (status) {
     filter.status = status;
@@ -90,6 +91,7 @@ const getFounderCourses = async (founderId, query = {}) => {
 
   const [courses, total] = await Promise.all([
     Course.find(filter)
+      .populate("founderId", "name email avatar title companyName")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit)),
@@ -108,16 +110,12 @@ const getFounderCourses = async (founderId, query = {}) => {
 };
 
 /**
- * Update course details (Founder only)
+ * Update course details (Admin only)
  */
-const updateCourse = async (courseId, founderId, updateData, files = {}) => {
+const updateCourse = async (courseId, adminId, updateData, files = {}) => {
   const course = await Course.findOne({ _id: courseId, status: { $ne: "deleted" } });
   if (!course) {
     throw new ApiError(404, "Course not found");
-  }
-
-  if (course.founderId.toString() !== founderId.toString()) {
-    throw new ApiError(403, "You do not have permission to modify this course");
   }
 
   const allowedFields = [
@@ -175,16 +173,12 @@ const updateCourse = async (courseId, founderId, updateData, files = {}) => {
 };
 
 /**
- * Delete course (Founder only)
+ * Delete course (Admin only)
  */
-const deleteCourse = async (courseId, founderId) => {
+const deleteCourse = async (courseId, adminId) => {
   const course = await Course.findOne({ _id: courseId, status: { $ne: "deleted" } });
   if (!course) {
     throw new ApiError(404, "Course not found");
-  }
-
-  if (course.founderId.toString() !== founderId.toString()) {
-    throw new ApiError(403, "You do not have permission to delete this course");
   }
 
   // Clean up main Cloudinary media
@@ -215,16 +209,12 @@ const deleteCourse = async (courseId, founderId) => {
 };
 
 /**
- * Add a lesson / video to a course module (Founder only)
+ * Add a lesson / video to a course module (Admin only)
  */
-const addLesson = async (courseId, founderId, lessonData, files = {}) => {
+const addLesson = async (courseId, adminId, lessonData, files = {}) => {
   const course = await Course.findOne({ _id: courseId, status: { $ne: "deleted" } });
   if (!course) {
     throw new ApiError(404, "Course not found");
-  }
-
-  if (course.founderId.toString() !== founderId.toString()) {
-    throw new ApiError(403, "You do not have permission to edit this course");
   }
 
   const { title, description, moduleTitle, moduleIndex, isPreview, order } = lessonData;
@@ -285,7 +275,6 @@ const addLesson = async (courseId, founderId, lessonData, files = {}) => {
       targetModule = course.modules[course.modules.length - 1];
     }
   } else {
-    // Default to first module or create "Module 1"
     if (course.modules.length === 0) {
       course.modules.push({
         title: "Module 1: Getting Started",
@@ -317,11 +306,11 @@ const addLesson = async (courseId, founderId, lessonData, files = {}) => {
 };
 
 /**
- * Update an existing lesson (Founder only)
+ * Update an existing lesson (Admin only)
  */
 const updateLesson = async (
   courseId,
-  founderId,
+  adminId,
   lessonId,
   updateData,
   files = {}
@@ -331,18 +320,11 @@ const updateLesson = async (
     throw new ApiError(404, "Course not found");
   }
 
-  if (course.founderId.toString() !== founderId.toString()) {
-    throw new ApiError(403, "You do not have permission to edit this course");
-  }
-
   let targetLesson;
-  let parentModule;
-
   for (const mod of course.modules) {
     const found = mod.lessons.id(lessonId);
     if (found) {
       targetLesson = found;
-      parentModule = mod;
       break;
     }
   }
@@ -401,20 +383,15 @@ const updateLesson = async (
 };
 
 /**
- * Delete a lesson from a course (Founder only)
+ * Delete a lesson from a course (Admin only)
  */
-const deleteLesson = async (courseId, founderId, lessonId) => {
+const deleteLesson = async (courseId, adminId, lessonId) => {
   const course = await Course.findOne({ _id: courseId, status: { $ne: "deleted" } });
   if (!course) {
     throw new ApiError(404, "Course not found");
   }
 
-  if (course.founderId.toString() !== founderId.toString()) {
-    throw new ApiError(403, "You do not have permission to edit this course");
-  }
-
   let foundLesson = false;
-
   for (const mod of course.modules) {
     const lesson = mod.lessons.id(lessonId);
     if (lesson) {
@@ -483,7 +460,7 @@ const getPublishedCourses = async (query = {}) => {
 };
 
 /**
- * Get course details by ID
+ * Get course details by ID with enrollment & role-based content protection
  */
 const getCourseById = async (courseId, user = null) => {
   const course = await Course.findOne({
@@ -495,20 +472,63 @@ const getCourseById = async (courseId, user = null) => {
     throw new ApiError(404, "Course not found");
   }
 
-  // If course is in draft mode, only the course owner (Founder) can view it
-  if (
-    course.status !== "published" &&
-    (!user || course.founderId._id.toString() !== user._id.toString())
-  ) {
+  const isAdmin = user && user.role === "admin";
+
+  // Draft mode restriction: only Admin can view unpublished courses
+  if (course.status !== "published" && !isAdmin) {
     throw new ApiError(403, "This course is not published yet");
   }
 
-  return course;
+  // Check enrollment for Founder / Investor
+  let isEnrolled = false;
+  if (user && (user.role === "founder" || user.role === "investor")) {
+    const enrollment = await Enrollment.findOne({
+      userId: user._id,
+      courseId,
+      status: "active",
+    });
+    if (enrollment) {
+      isEnrolled = true;
+    }
+  }
+
+  const courseObj = course.toObject();
+
+  // If Admin OR Free Course OR Enrolled -> Return complete content
+  if (isAdmin || course.price === 0 || isEnrolled) {
+    courseObj.isEnrolled = true;
+    return courseObj;
+  }
+
+  // Non-enrolled user: Sanitize non-preview lesson video/document URLs
+  courseObj.isEnrolled = false;
+  if (courseObj.modules && Array.isArray(courseObj.modules)) {
+    courseObj.modules = courseObj.modules.map((mod) => {
+      if (mod.lessons && Array.isArray(mod.lessons)) {
+        mod.lessons = mod.lessons.map((lesson) => {
+          if (lesson.isPreview) {
+            return { ...lesson, isLocked: false };
+          }
+          return {
+            ...lesson,
+            videoUrl: "",
+            cloudinaryPublicId: "",
+            documentUrl: "",
+            documentPublicId: "",
+            isLocked: true,
+          };
+        });
+      }
+      return mod;
+    });
+  }
+
+  return courseObj;
 };
 
 module.exports = {
   createCourse,
-  getFounderCourses,
+  getAdminCourses,
   updateCourse,
   deleteCourse,
   addLesson,
