@@ -95,25 +95,82 @@ const register = asyncHandler(async (req, res) => {
   res.status(201).json(new ApiResponse(201, result, "Registration successful"));
 });
 
-/* === PRE-ACCOUNT SIGNUP SESSION CONTROLLER (Commented out — uncomment when mandatory pre-account KYC is enabled) ===
+// Initiate Signup — creates a temporary Redis session (TTL 30 min).
+// Does NOT create a MongoDB User, issue JWT, or set auth cookies.
+// The permanent account is only created after backend-confirmed identity verification.
 const initiateSignup = asyncHandler(async (req, res) => {
   validateInitiateSignup(req.body);
   const {
-    name, username, email: rawEmail, password, role, phone, country,
-    companyName, industry, fundingStage, website, linkedIn,
-    investorType, investmentRange, preferredIndustries, preferredStages, investmentThesis,
+    name,
+    username,
+    email: rawEmail,
+    password,
+    role,
+    phone,
+    country,
+    companyName,
+    industry,
+    fundingStage,
+    website,
+    linkedIn,
+    investorType,
+    investmentRange,
+    preferredIndustries,
+    preferredStages,
+    investmentThesis,
   } = req.body;
+
   const email = (rawEmail || "").toLowerCase().trim();
+
+  // Security: ignore any client-supplied verification flags
   const result = await signupSessionService.createSession({
-    name, username, email, password, role, phone, country,
-    companyName, industry, fundingStage, website, linkedIn,
-    investorType, investmentRange, preferredIndustries, preferredStages, investmentThesis,
+    name,
+    username,
+    email,
+    password,
+    role,
+    phone,
+    country,
+    companyName,
+    industry,
+    fundingStage,
+    website,
+    linkedIn,
+    investorType,
+    investmentRange,
+    preferredIndustries,
+    preferredStages,
+    investmentThesis,
   });
+
+  // Return ONLY signupSessionId + expiresAt — no JWT, no user, no auth cookie
   res.status(200).json(
     new ApiResponse(200, result, "Signup session created. Proceed to identity verification.")
   );
 });
-=================================================================================================================== */
+
+// Skip identity verification during signup — creates an unverified user account
+const skipSignup = asyncHandler(async (req, res) => {
+  const { signupSessionId } = req.body;
+  if (!signupSessionId) throw new ApiError(400, "signupSessionId is required");
+
+  const result = await signupSessionService.skipAndCreateAccount(signupSessionId);
+
+  res.cookie("accessToken", result.accessToken, {
+    ...cookieOptions,
+    maxAge: 15 * 60 * 1000,
+  });
+  res.cookie("refreshToken", result.refreshToken, {
+    ...cookieOptions,
+    maxAge: 30 * 24 * 60 * 60 * 1000,
+  });
+
+  res.status(200).json(
+    new ApiResponse(200, result, "Account created successfully without identity verification")
+  );
+});
+
+
 
 
 // Live availability check for username / email / phone
@@ -236,8 +293,11 @@ const changePassword = asyncHandler(async (req, res) => {
 
 module.exports = {
   register,
-  // initiateSignup, // uncomment when mandatory pre-account KYC is enabled
+  initiateSignup,
+  skipSignup,
   checkAvailability,
+
+
   login,
 
   logout,

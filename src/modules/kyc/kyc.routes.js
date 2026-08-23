@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const kycController = require("./kyc.controller");
-const { authenticate } = require("../../middlewares/auth.middleware");
+const { authenticate, optionalAuthenticate } = require("../../middlewares/auth.middleware");
 
 // IMPORTANT: the DigiLocker callback must be mounted BEFORE the `authenticate`
 // middleware below. DigiLocker redirects the user's browser back to this URL
@@ -10,9 +10,10 @@ const { authenticate } = require("../../middlewares/auth.middleware");
 // inside kycController.digilockerCallback -> kycService.handleDigilockerCallback.
 router.get("/digilocker/callback", kycController.digilockerCallback);
 
-/* === PRE-ACCOUNT DIGILOCKER AUTHORIZE ROUTE (Commented out — uncomment when mandatory pre-account KYC is enabled) ===
-// router.get("/digilocker/authorize", optionalAuthenticate, kycController.authorizeDigilocker);
-==================================================================================================================== */
+// DigiLocker authorize: open to both authenticated users (existing account KYC)
+// AND unauthenticated pre-account signup flows (signupSessionId query param).
+// optionalAuthenticate populates req.user if a valid token is present, else null.
+router.get("/digilocker/authorize", optionalAuthenticate, kycController.authorizeDigilocker);
 
 router.use(authenticate);
 
@@ -24,8 +25,8 @@ router.post("/company", kycController.submitCompanyKyc);
 router.post("/investment", kycController.submitInvestmentKyc);
 
 // DigiLocker automatic verification (authenticated routes)
-router.get("/digilocker/authorize", kycController.authorizeDigilocker);
 router.get("/digilocker/status", kycController.getDigilockerStatus);
 router.post("/digilocker/fallback", kycController.digilockerFallback);
+
 
 module.exports = router;

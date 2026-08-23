@@ -10,3 +10,6 @@ logs/
 .vscode/
 .idea/
 coverage/
+scratch/
+tmp/
+
