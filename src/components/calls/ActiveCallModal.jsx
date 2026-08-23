@@ -30,15 +30,19 @@ export const ActiveCallModal = ({
 
   useEffect(() => {
     if (localVideoRef.current && localStream) {
+      console.log("🎥 ActiveCallModal localVideoRef setting srcObject:", localStream.id);
       localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play?.().catch((err) => console.warn("⚠️ Local video play error:", err));
     }
   }, [localStream]);
 
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
+      console.log("📹 ActiveCallModal remoteVideoRef setting srcObject:", remoteStream.id);
       remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play?.().catch((err) => console.warn("⚠️ Remote video play error:", err));
     }
-  }, [remoteStream]);
+  }, [remoteStream, activeCall?.status]);
 
   if (!currentCall) return null;
 
@@ -82,7 +86,14 @@ export const ActiveCallModal = ({
             <div className="wa-remote-video">
               {remoteStream ? (
                 <video
-                  ref={remoteVideoRef}
+                  ref={(el) => {
+                    remoteVideoRef.current = el;
+                    if (el && remoteStream && el.srcObject !== remoteStream) {
+                      console.log("📹 Callback ref setting remoteVideoRef.srcObject:", remoteStream.id);
+                      el.srcObject = remoteStream;
+                      el.play?.().catch((err) => console.warn("⚠️ Remote video play error:", err));
+                    }
+                  }}
                   autoPlay
                   playsInline
                   className="wa-video-element"
