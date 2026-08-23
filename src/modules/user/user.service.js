@@ -362,15 +362,7 @@ const resolveUserId = async (idOrUsername) => {
   }).select("_id");
   if (userByName) return userByName._id;
 
-  // Fallback for mock/placeholder IDs (e.g. f_1, f_2, founder_1, 1) in frontend mock data
-  if (/^(f_\d+|founder_\d+|mock_\d+|\d+|pitch_\d+)$/i.test(str)) {
-    const defaultFounder = await User.findOne({ role: "founder" }).select("_id");
-    if (defaultFounder) return defaultFounder._id;
-    const anyUser = await User.findOne().select("_id");
-    if (anyUser) return anyUser._id;
-  }
-
-  return mongoose.Types.ObjectId.isValid(str) ? str : null;
+  return null;
 };
 
 const getPublicProfile = async (viewerId, userIdOrUsername) => {

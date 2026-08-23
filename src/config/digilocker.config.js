@@ -41,7 +41,6 @@ module.exports = {
   stateMaxAgeMs: 10 * 60 * 1000, // 10 minutes
 
   // If true, DigiLocker calls are mocked with sample data instead of hitting the
-  // real API. Useful for building/testing the rest of the flow before Requester
-  // credentials are issued. Set DIGILOCKER_MOCK_MODE=false once credentials exist.
-  mockMode: (process.env.DIGILOCKER_MOCK_MODE || "true").toLowerCase() === "true",
+  // real API. Set DIGILOCKER_MOCK_MODE=true for local dev mock mode. Defaults to false.
+  mockMode: (process.env.DIGILOCKER_MOCK_MODE || "false").toLowerCase() === "true",
 };

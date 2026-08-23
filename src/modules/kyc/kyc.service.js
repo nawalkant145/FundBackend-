@@ -295,17 +295,18 @@ const submitInvestmentKyc = async (userId, { addressProof, bankAccount, incomePr
 // When called during signup (before account creation), signupSessionId is provided.
 // When called by an authenticated user, userId is provided (existing post-account KYC).
 const initiateDigilockerVerification = async (userId, { signupSessionId } = {}) => {
-  /* === PRE-ACCOUNT SIGNUP FLOW (Commented out — uncomment when mandatory pre-account KYC is enabled) ===
   if (signupSessionId) {
+    // Pre-account signup flow — validate the session exists before redirecting
     const signupSessionService = require("../auth/signupSession.service");
     const session = await signupSessionService.getSession(signupSessionId);
+    // Generate the OAuth URL embedding signupSessionId in the signed state
     const { url, state } = digilockerService.getAuthorizationUrl(null, { signupSessionId });
     return { redirectUrl: url, state };
   }
-  =================================================================================================== */
 
   // Existing post-account flow — user already has a MongoDB User record
   const user = await User.findById(userId);
+
 
   if (!user) throw new ApiError(404, "User not found");
 
@@ -337,46 +338,62 @@ const handleDigilockerCallback = async ({ code, state }) => {
   const statePayload = digilockerService.verifyState(state);
   const { userId, signupSessionId } = statePayload;
 
-  /* === PRE-ACCOUNT SIGNUP FLOW (Commented out — uncomment when mandatory pre-account KYC is enabled) ===
+  // ── PRE-ACCOUNT SIGNUP FLOW ──────────────────────────────────────────────
+  // The user has NOT yet been created in MongoDB.
+  // On success: create permanent User + issue JWT.
+  // On failure: do NOT create User, do NOT issue JWT.
   if (signupSessionId) {
     const signupSessionService = require("../auth/signupSession.service");
+
     let tokenResponse;
     try {
       tokenResponse = await digilockerService.exchangeCodeForToken(code);
     } catch (err) {
+      // Verification failed — return failed status (no user created)
       return { status: "failed", signupSessionId, reason: "OAuth token exchange failed" };
     }
+
     const { extractedData, documentsVerified } = await digilockerService.retrieveAndParseDocuments(
       tokenResponse.access_token
     );
+
     if (documentsVerified.length === 0) {
       return { status: "failed", signupSessionId, reason: "No documents returned by DigiLocker" };
     }
+
+    // Retrieve session to check name match
     let session;
     try {
       session = await signupSessionService.getSession(signupSessionId);
     } catch {
       return { status: "failed", signupSessionId, reason: "Signup session expired" };
     }
+
     const match = matchIdentity({
       accountName: session.accountData.name,
       accountDob: null,
       digilockerName: extractedData.name,
       digilockerDob: extractedData.dob,
     });
+
     if (!match.passed) {
+      // Identity mismatch — fail (do not create account)
       return { status: "failed", signupSessionId, reason: "Identity name mismatch" };
     }
+
+    // Verification passed — finalize permanent account creation
     try {
       const result = await signupSessionService.finalizeAccountCreation(signupSessionId, {
         kycDetails: { extractedData, documentsVerified, digilockerReference: tokenResponse.digilocker_id || "" },
       });
+      // Result contains { user, accessToken, refreshToken } to be sent back in cookies
       return { status: "approved", ...result };
     } catch (err) {
+      // Account creation failed (e.g., race-condition duplicate) — do not leave orphaned state
       return { status: "failed", signupSessionId, reason: err.message };
     }
   }
-  =================================================================================================== */
+
 
 
   // ── POST-ACCOUNT FLOW (Existing Authenticated User) ──────────────────────

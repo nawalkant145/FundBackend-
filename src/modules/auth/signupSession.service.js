@@ -246,6 +246,80 @@ const finalizeAccountCreation = async (signupSessionId, { kycDetails } = {}) => 
   return { user: user.toSafeJSON(), accessToken, refreshToken };
 };
 
+// ─── Skip identity verification & create unverified account ─────────────────
+// Creates an unverified permanent user account from a signup session when the user skips verification.
+// Rules:
+// - Does NOT mark identity as verified (identityVerified: false, verificationLevel: 0, kycStatus: "none")
+// - Does NOT create fake Aadhaar/PAN or KYC data
+// - Deletes the Redis signup session
+// - Issues JWT tokens & returns { user, accessToken, refreshToken }
+
+const skipAndCreateAccount = async (signupSessionId) => {
+  const session = await getSession(signupSessionId);
+
+  const { accountData, profileData, role } = session;
+  const { name, username, email, passwordHash, phone, country } = accountData;
+
+  // Duplicate check guards
+  if (await User.findOne({ email })) {
+    throw new ApiError(409, "Email already registered");
+  }
+  if (username && (await User.findOne({ username }))) {
+    throw new ApiError(409, "Username taken");
+  }
+  if (phone && (await User.findOne({ phone }))) {
+    throw new ApiError(409, "Phone already registered");
+  }
+
+  // Unverified user creation — identityVerified remains FALSE
+  const userData = {
+    name,
+    username,
+    email,
+    password: passwordHash,
+    role,
+    emailVerified: false,
+    phoneVerified: false,
+    identityVerified: false, // Explicitly false
+    verificationLevel: 0,
+    kycStatus: "none",
+    verifiedBadge: false,
+    isVerified: false,
+  };
+
+  if (phone) userData.phone = phone;
+  if (country) userData.country = country;
+
+  if (profileData.companyName) userData.companyName = profileData.companyName;
+  if (profileData.industry) userData.industry = profileData.industry;
+  if (profileData.fundingStage) userData.fundingStage = profileData.fundingStage;
+  if (profileData.website) userData.website = profileData.website;
+  if (profileData.linkedIn) userData.linkedIn = profileData.linkedIn;
+
+  if (profileData.investorType) userData.investorType = profileData.investorType;
+  if (profileData.investmentRange) userData.investmentRange = profileData.investmentRange;
+  if (profileData.preferredIndustries?.length)
+    userData.preferredIndustries = profileData.preferredIndustries;
+  if (profileData.preferredStages?.length)
+    userData.preferredStages = profileData.preferredStages;
+  if (profileData.investmentThesis) userData.investmentThesis = profileData.investmentThesis;
+
+  const user = await User.create(userData);
+
+  const tokenPayload = { _id: user._id.toString(), role: user.role };
+  const accessToken = generateAccessToken(tokenPayload);
+  const refreshToken = generateRefreshToken(tokenPayload);
+  user.refreshToken = hashRefresh(refreshToken);
+  user.lastLoginAt = new Date();
+  user.isOnline = true;
+  await user.save({ validateBeforeSave: false });
+
+  const redis = getRedis();
+  await redis.del(`signupSession:${signupSessionId}`);
+
+  return { user: user.toSafeJSON(), accessToken, refreshToken };
+};
+
 // ─── Delete a session (on failure / retry) ────────────────────────────────────
 
 const deleteSession = async (signupSessionId) => {
@@ -258,6 +332,8 @@ module.exports = {
   createSession,
   getSession,
   finalizeAccountCreation,
+  skipAndCreateAccount,
   deleteSession,
   SESSION_TTL_SECONDS,
 };
+

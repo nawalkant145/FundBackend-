@@ -43,15 +43,17 @@ const getKycDetails = asyncHandler(async (req, res) => {
 // Authenticated post-account flow: user is already logged in
 // Pre-account signup flow: signupSessionId passed as ?signupSessionId=<id> query param (no auth)
 const authorizeDigilocker = asyncHandler(async (req, res) => {
-  /* === PRE-ACCOUNT BRANCH (Commented out — uncomment when mandatory pre-account KYC is enabled) ===
   const signupSessionId = req.query.signupSessionId || null;
+
   if (signupSessionId) {
+    // Pre-account flow — no req.user, identity not yet created
     const { redirectUrl } = await kycService.initiateDigilockerVerification(null, { signupSessionId });
-    return res.status(200).json(new ApiResponse(200, { redirectUrl }, "DigiLocker authorization URL generated"));
+    res.status(200).json(new ApiResponse(200, { redirectUrl }, "DigiLocker authorization URL generated"));
+  } else {
+    // Post-account authenticated flow
+    const { redirectUrl } = await kycService.initiateDigilockerVerification(req.user._id);
+    res.status(200).json(new ApiResponse(200, { redirectUrl }, "DigiLocker authorization URL generated"));
   }
-  ================================================================================================ */
-  const { redirectUrl } = await kycService.initiateDigilockerVerification(req.user._id);
-  res.status(200).json(new ApiResponse(200, { redirectUrl }, "DigiLocker authorization URL generated"));
 });
 
 const digilockerCallback = asyncHandler(async (req, res) => {
@@ -60,20 +62,28 @@ const digilockerCallback = asyncHandler(async (req, res) => {
 
   const frontendBase = process.env.FRONTEND_BASE_URL || "/";
 
-  /* === PRE-ACCOUNT CALLBACK BRANCH (Commented out — uncomment when mandatory pre-account KYC is enabled) ===
+  // Pre-account signup flow — result contains { status, user, accessToken, refreshToken }
   if (result.signupSessionId !== undefined || (result.status === "approved" && result.accessToken)) {
     if (result.status === "approved" && result.accessToken && result.refreshToken) {
-      res.cookie("accessToken", result.accessToken, { ...cookieOptions, maxAge: 15 * 60 * 1000 });
-      res.cookie("refreshToken", result.refreshToken, { ...cookieOptions, maxAge: 30 * 24 * 60 * 60 * 1000 });
+      // Set authentication cookies — account was just created
+      res.cookie("accessToken", result.accessToken, {
+        ...cookieOptions,
+        maxAge: 15 * 60 * 1000, // 15 minutes
+      });
+      res.cookie("refreshToken", result.refreshToken, {
+        ...cookieOptions,
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      });
       return res.redirect(`${frontendBase}/kyc?digilocker=approved&signup=1`);
     }
+    // Failed pre-account verification — no user created, no cookies
     return res.redirect(`${frontendBase}/kyc?digilocker=failed&signup=1`);
   }
-  ========================================================================================================== */
 
   // Post-account flow — existing user
   res.redirect(`${frontendBase}/kyc?digilocker=${result.status}`);
 });
+
 
 
 const getDigilockerStatus = asyncHandler(async (req, res) => {
