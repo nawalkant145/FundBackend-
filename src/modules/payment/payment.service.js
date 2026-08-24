@@ -10,6 +10,21 @@ const razorpayService = require("./razorpay.service");
 const ApiError = require("../../utils/ApiError");
 
 /**
+ * Safely unset null values on sparse indexed fields for legacy payment documents
+ */
+const sanitizeNullSparseFields = async () => {
+  try {
+    await Payment.updateMany({ razorpayPaymentId: null }, { $unset: { razorpayPaymentId: "" } });
+    await Payment.updateMany({ claimToken: null }, { $unset: { claimToken: "" } });
+  } catch (err) {
+    // Non-blocking warning for legacy cleanup
+    console.warn("[Payment DB Migration Warning] Could not sanitize null sparse fields:", err.message);
+  }
+};
+// Run once asynchronously on module load
+sanitizeNullSparseFields();
+
+/**
  * Create a server-authorized Razorpay Order for an authenticated Founder/Investor
  */
 const createCourseOrder = async (user, courseId) => {
@@ -42,12 +57,15 @@ const createCourseOrder = async (user, courseId) => {
   // Check if user is already enrolled
   const existingEnrollment = await Enrollment.findOne({ userId: user._id, courseId, status: "active" });
   if (existingEnrollment) {
-    throw new ApiError(400, "You are already enrolled in this course");
+    throw new ApiError(400, "You are already enrolled in this course.");
   }
 
   // Price coming strictly from backend MongoDB Course model
-  const priceInRupees = course.price || 0;
-  const amountInPaise = Math.round(priceInRupees * 100);
+  const rawPrice = Number(course.price);
+  if (isNaN(rawPrice) || rawPrice < 0) {
+    throw new ApiError(400, "Invalid course price configuration.");
+  }
+  const amountInPaise = Math.round(rawPrice * 100);
 
   // Free course handling
   if (amountInPaise <= 0) {
@@ -59,12 +77,42 @@ const createCourseOrder = async (user, courseId) => {
     return { isFree: true, enrollment };
   }
 
-  const receipt = `course_${courseId.toString().slice(-6)}_${Date.now().toString(36)}`;
+  if (amountInPaise < 100) {
+    throw new ApiError(400, "Payment amount must be at least ₹1 (100 paise).");
+  }
+
+  // Check if an active unfulfilled pending order exists for this user and course created within 15 mins
+  const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+  const pendingOrder = await Payment.findOne({
+    userId: user._id,
+    courseId,
+    status: "created",
+    createdAt: { $gte: fifteenMinsAgo },
+  }).sort({ createdAt: -1 });
+
+  if (pendingOrder && pendingOrder.amount === amountInPaise && pendingOrder.razorpayOrderId) {
+    return {
+      success: true,
+      order: {
+        id: pendingOrder.razorpayOrderId,
+        amount: pendingOrder.amount,
+        currency: pendingOrder.currency || "INR",
+      },
+      keyId: process.env.RAZORPAY_KEY_ID,
+      paymentId: pendingOrder._id,
+      reusedPendingOrder: true,
+    };
+  }
+
+  // Generate safe Razorpay receipt (max 40 chars, using safe alphanumerics <= 25 chars)
+  const receipt = `rcpt_${courseId.toString().slice(-6)}_${Date.now().toString(36)}`;
+
   const order = await razorpayService.createOrder(amountInPaise, "INR", receipt, {
     courseId: courseId.toString(),
     userId: user._id.toString(),
   });
 
+  // Construct document without null defaults for sparse fields
   const paymentRecord = await Payment.create({
     userId: user._id,
     courseId,
@@ -81,7 +129,7 @@ const createCourseOrder = async (user, courseId) => {
     order: {
       id: order.id,
       amount: order.amount,
-      currency: order.currency,
+      currency: order.currency || "INR",
     },
     keyId: process.env.RAZORPAY_KEY_ID,
     paymentId: paymentRecord._id,
@@ -96,7 +144,6 @@ const guestCreateCourseOrder = async (courseId) => {
     throw new ApiError(400, "Invalid course ID format.");
   }
 
-  // First find the course ignoring deleted status — gives better error messages
   const course = await Course.findById(courseId);
   if (!course) {
     throw new ApiError(404, "Course not found. Please refresh the page and try again.");
@@ -110,14 +157,45 @@ const guestCreateCourseOrder = async (courseId) => {
     throw new ApiError(400, `This course is not available for purchase yet (status: ${course.status}).`);
   }
 
-  const priceInRupees = course.price || 0;
-  const amountInPaise = Math.round(priceInRupees * 100);
+  const rawPrice = Number(course.price);
+  if (isNaN(rawPrice) || rawPrice < 0) {
+    throw new ApiError(400, "Invalid course price configuration.");
+  }
+  const amountInPaise = Math.round(rawPrice * 100);
 
   if (amountInPaise <= 0) {
-    throw new ApiError(400, "Free courses require account sign-up before enrollment");
+    throw new ApiError(400, "Free courses require account sign-up before enrollment.");
   }
 
-  const receipt = `guest_course_${courseId.toString().slice(-6)}_${Date.now().toString(36)}`;
+  if (amountInPaise < 100) {
+    throw new ApiError(400, "Payment amount must be at least ₹1 (100 paise).");
+  }
+
+  // Check for recent unfulfilled guest order for the same course created within 15 mins
+  const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+  const pendingGuestOrder = await Payment.findOne({
+    userId: null,
+    courseId,
+    status: "created",
+    isGuest: true,
+    createdAt: { $gte: fifteenMinsAgo },
+  }).sort({ createdAt: -1 });
+
+  if (pendingGuestOrder && pendingGuestOrder.amount === amountInPaise && pendingGuestOrder.razorpayOrderId) {
+    return {
+      success: true,
+      order: {
+        id: pendingGuestOrder.razorpayOrderId,
+        amount: pendingGuestOrder.amount,
+        currency: pendingGuestOrder.currency || "INR",
+      },
+      keyId: process.env.RAZORPAY_KEY_ID,
+      paymentId: pendingGuestOrder._id,
+      reusedPendingOrder: true,
+    };
+  }
+
+  const receipt = `g_rcpt_${courseId.toString().slice(-6)}_${Date.now().toString(36)}`;
   const order = await razorpayService.createOrder(amountInPaise, "INR", receipt, {
     courseId: courseId.toString(),
     isGuest: "true",
@@ -139,7 +217,7 @@ const guestCreateCourseOrder = async (courseId) => {
     order: {
       id: order.id,
       amount: order.amount,
-      currency: order.currency,
+      currency: order.currency || "INR",
     },
     keyId: process.env.RAZORPAY_KEY_ID,
     paymentId: paymentRecord._id,

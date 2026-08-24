@@ -22,7 +22,6 @@ const paymentSchema = new mongoose.Schema(
     },
     razorpayPaymentId: {
       type: String,
-      default: null,
       sparse: true,
       trim: true,
     },
@@ -73,7 +72,6 @@ const paymentSchema = new mongoose.Schema(
     },
     claimToken: {
       type: String,
-      default: null,
       sparse: true,
       index: true,
     },

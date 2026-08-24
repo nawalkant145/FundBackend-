@@ -28,13 +28,25 @@ const getRazorpay = () => {
  */
 const createOrder = async (amountInSubunits, currency = "INR", receipt = "", notes = {}) => {
   const rzp = getRazorpay();
-  const order = await rzp.orders.create({
-    amount: Math.round(amountInSubunits),
-    currency,
-    receipt,
-    notes,
-  });
-  return order;
+  try {
+    const order = await rzp.orders.create({
+      amount: Math.round(amountInSubunits),
+      currency,
+      receipt,
+      notes,
+    });
+    return order;
+  } catch (err) {
+    // Log detailed diagnostic information server-side without exposing key secrets
+    const failureDetail = err.error?.description || err.error?.reason || err.message || "Unknown Razorpay error";
+    const failureCode = err.error?.code || err.statusCode || "RAZORPAY_ERROR";
+    console.error(`[Razorpay Order Error] Code: ${failureCode} | Detail: ${failureDetail}`);
+
+    throw new ApiError(
+      400,
+      `Unable to create Razorpay payment order: ${failureDetail}`
+    );
+  }
 };
 
 /**
