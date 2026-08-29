@@ -972,7 +972,22 @@ const getTrending = async ({ limit = 10, userId } = {}) => {
   ]);
 
   // Enrich with isLiked/isSaved for the requesting user via central utility
-  return enrichVideos(videos, userId);
+  const enriched = enrichVideos(videos, userId);
+
+  return enriched.map((v) => {
+    const viewsCount = v.views || 0;
+    const daysOld = Math.max(0.5, (Date.now() - new Date(v.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+    let viewGrowthPercent = 0;
+    if (viewsCount > 0) {
+      const dailyVelocity = viewsCount / daysOld;
+      const likesCount = Array.isArray(v.likes) ? v.likes.length : 0;
+      viewGrowthPercent = Math.min(99, Math.max(5, Math.round(dailyVelocity * 10 + likesCount * 2)));
+    }
+    return {
+      ...v,
+      viewGrowthPercent,
+    };
+  });
 };
 
 // Search videos directly
