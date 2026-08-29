@@ -152,6 +152,13 @@ const checkFollowing = asyncHandler(async (req, res) => {
   );
 });
 
+const getRecommendedStartups = asyncHandler(async (req, res) => {
+  const startups = await userService.getRecommendedStartups(req.user._id, {
+    limit: req.query.limit,
+  });
+  res.json(new ApiResponse(200, { startups }, "Recommended startups fetched"));
+});
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -163,6 +170,7 @@ module.exports = {
   updateFcmToken,
   getPublicProfile,
   getProfileViewers,
+  getRecommendedStartups,
   blockUser,
   unblockUser,
   deleteAccount,

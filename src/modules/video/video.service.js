@@ -944,6 +944,8 @@ const getTrending = async ({ limit = 10, userId } = {}) => {
     { $unwind: "$founder" },
     {
       $project: {
+        pitchId: "$_id",
+        _id: 1,
         title: 1,
         description: 1,
         videoUrl: 1,

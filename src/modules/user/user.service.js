@@ -563,6 +563,7 @@ module.exports = {
   updateFcmToken,
   getPublicProfile,
   getProfileViewers,
+  getRecommendedStartups,
   blockUser,
   unblockUser,
   deleteAccount,
@@ -677,3 +678,78 @@ async function getFollowingList(userIdOrUsername) {
     (item) => item && typeof item === "object" && item._id,
   );
 }
+
+async function getRecommendedStartups(investorId, { limit = 10 } = {}) {
+  limit = Math.min(Number(limit) || 10, 30);
+  const investor = await User.findById(investorId).lean();
+  if (!investor) throw new ApiError(404, "Investor not found");
+
+  const preferredIndustries = Array.isArray(investor.preferredIndustries) && investor.preferredIndustries.length > 0
+    ? investor.preferredIndustries
+    : (investor.industry ? [investor.industry] : []);
+
+  const preferredStages = Array.isArray(investor.preferredStages) && investor.preferredStages.length > 0
+    ? investor.preferredStages
+    : (investor.fundingStage ? [investor.fundingStage] : []);
+
+  const filter = {
+    role: "founder",
+    _id: { $ne: investorId },
+    isDeleted: { $ne: true },
+    kycStatus: { $ne: "rejected" },
+  };
+
+  const founders = await User.find(filter)
+    .select("_id name username avatar companyName industry fundingStage isVerified verificationLevel bio activePitchId createdAt")
+    .sort({ isVerified: -1, verificationLevel: -1, createdAt: -1 })
+    .limit(limit * 3)
+    .lean();
+
+  if (!founders.length) return [];
+
+  const Video = require("../video/video.model");
+  const founderIds = founders.map((f) => f._id);
+  const activePitches = await Video.find({
+    founderId: { $in: founderIds },
+    status: "active",
+  })
+    .sort({ createdAt: -1 })
+    .select("_id founderId industry fundingStage views")
+    .lean();
+
+  const pitchMap = {};
+  activePitches.forEach((p) => {
+    const fId = p.founderId.toString();
+    if (!pitchMap[fId]) pitchMap[fId] = p;
+  });
+
+  const scored = founders.map((f) => {
+    const fId = f._id.toString();
+    const activePitch = pitchMap[fId];
+    let score = 0;
+
+    if (activePitch) score += 50;
+    if (f.isVerified || f.verificationLevel > 0) score += 30;
+    if (preferredIndustries.includes(f.industry)) score += 20;
+    if (preferredStages.includes(f.fundingStage)) score += 10;
+
+    return {
+      _id: f._id,
+      startupId: f._id,
+      name: f.companyName || f.name,
+      companyName: f.companyName || f.name,
+      founderName: f.name,
+      avatar: f.avatar,
+      industry: f.industry || activePitch?.industry || "Tech",
+      fundingStage: f.fundingStage || activePitch?.fundingStage || "Seed",
+      isVerified: Boolean(f.isVerified || f.verificationLevel > 0),
+      bio: f.bio || "",
+      pitchId: activePitch?._id || null,
+      recommendationScore: score,
+    };
+  });
+
+  scored.sort((a, b) => b.recommendationScore - a.recommendationScore);
+
+  return scored.slice(0, limit);
+};

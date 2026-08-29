@@ -32,6 +32,8 @@ router.put("/fcm-token", c.updateFcmToken);
 
 router.get("/search", c.search);
 router.get("/profile-viewers", c.getProfileViewers);
+router.get("/recommended-startups", c.getRecommendedStartups);
+router.get("/recommended", c.getRecommendedStartups);
 router.get("/public/:userId", c.getPublicProfile);
 
 router.post("/block/:userId", c.blockUser);
