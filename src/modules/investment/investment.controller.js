@@ -45,6 +45,21 @@ const webhook = asyncHandler(async (req, res) => {
 
 const myDeals = asyncHandler(async (req, res) => {
   const deals = await investmentService.myDeals(req.user._id);
+  console.log("[FOUNDER_DEALS_API]", {
+    authenticatedUserId: req.user._id.toString(),
+    endpoint: "GET /api/v1/investment/my-deals",
+    responseCount: deals?.length || 0,
+    deals: (deals || []).map((d) => ({
+      _id: d._id.toString(),
+      founderId: d.founderId?._id?.toString() || d.founderId?.toString(),
+      investorId: d.investorId?._id?.toString() || d.investorId?.toString(),
+      videoId: d.videoId?._id?.toString() || d.videoId?.toString(),
+      status: d.status,
+      stage: d.stage,
+      amount: d.amount,
+      equity: d.equity,
+    })),
+  });
   res.json(new ApiResponse(200, { deals }, "My deals"));
 });
 
