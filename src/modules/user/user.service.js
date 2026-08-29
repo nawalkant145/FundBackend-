@@ -427,20 +427,63 @@ const getPublicProfile = async (viewerId, userIdOrUsername) => {
   return userObj;
 };
 
-const getProfileViewers = async (userId, { limit = 20, cursor } = {}) => {
+const getProfileViewers = async (userId, { limit = 20 } = {}) => {
   limit = Math.min(Number(limit) || 20, 50);
-  const q = { profileOwnerId: userId };
-  if (cursor) q._id = { $lt: cursor };
-  const items = await ProfileView.find(q)
-    .sort({ _id: -1 })
-    .limit(limit + 1)
-    .populate("viewerId", "name avatar role companyName isVerified")
+  const ownerObjId = new mongoose.Types.ObjectId(userId);
+
+  // 1. Group ProfileView by viewerId and find max viewedAt timestamp
+  const aggregated = await ProfileView.aggregate([
+    { $match: { profileOwnerId: ownerObjId } },
+    {
+      $group: {
+        _id: "$viewerId",
+        latestViewedAt: { $max: "$viewedAt" },
+      },
+    },
+    { $sort: { latestViewedAt: -1 } },
+  ]);
+
+  const allViewerIds = aggregated.map((a) => a._id);
+
+  // 2. Fetch investor users matching role "investor" (exclude banned/inactive)
+  const investorUsers = await User.find({
+    _id: { $in: allViewerIds },
+    role: "investor",
+    isBanned: { $ne: true },
+    isActive: { $ne: false },
+  })
+    .select(
+      "name username avatar role companyName isVerified investorType preferredIndustries preferredStages",
+    )
     .lean();
-  const hasMore = items.length > limit;
+
+  const investorSet = new Set(investorUsers.map((u) => String(u._id)));
+  const userMap = new Map();
+  investorUsers.forEach((u) => userMap.set(String(u._id), u));
+
+  // Filter aggregated list to valid investor accounts only
+  const investorAggregated = aggregated.filter((item) =>
+    investorSet.has(String(item._id)),
+  );
+
+  // 3. Total unique investors count across the whole database
+  const totalCount = investorAggregated.length;
+
+  // 4. Paginate viewer records for response payload
+  const paginatedAggregated = investorAggregated.slice(0, limit);
+
+  const paginatedViewers = paginatedAggregated.map((item) => ({
+    _id: String(item._id),
+    viewer: userMap.get(String(item._id)),
+    viewedAt: item.latestViewedAt,
+  }));
+
   return {
-    views: hasMore ? items.slice(0, limit) : items,
-    nextCursor: hasMore ? items[limit - 1]._id : null,
-    hasMore,
+    count: totalCount,
+    totalCount,
+    viewers: paginatedViewers,
+    views: paginatedViewers,
+    hasMore: totalCount > limit,
   };
 };
 

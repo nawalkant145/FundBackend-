@@ -118,4 +118,32 @@ const unreadCount = async (userId) => {
   return Notification.countDocuments({ userId, isRead: false });
 };
 
-module.exports = { send, list, markRead, markAllRead, remove, unreadCount };
+const getById = async (id, userId) => {
+  const n = await Notification.findOne({ _id: id, userId });
+  if (!n) throw new ApiError(404, "Notification not found");
+  if (!n.isRead) {
+    n.isRead = true;
+    n.readAt = new Date();
+    await n.save();
+  }
+
+  let investment = null;
+  const investmentId = n.data?.investmentId;
+  if (investmentId) {
+    try {
+      const Investment = require("../investment/investment.model");
+      investment = await Investment.findById(investmentId)
+        .populate("founderId", "name avatar companyName email isVerified")
+        .populate("investorId", "name avatar email phone location isVerified")
+        .populate("videoId", "title thumbnailUrl coverUrl askAmount equityOffered fundingStage");
+    } catch {}
+  }
+
+  const obj = n.toObject ? n.toObject() : n;
+  return {
+    ...obj,
+    investment,
+  };
+};
+
+module.exports = { send, list, markRead, markAllRead, remove, unreadCount, getById };

@@ -8,6 +8,18 @@ const list = asyncHandler(async (req, res) => {
     limit: req.query.limit,
     unreadOnly: req.query.unreadOnly === "true",
   });
+  console.log("[FOUNDER_NOTIFICATION_API]", {
+    authenticatedUserId: req.user._id.toString(),
+    notificationCount: result?.notifications?.length || 0,
+    matchingInvestmentNotifications: (result?.notifications || [])
+      .filter((n) => n.type === "investment")
+      .map((n) => ({
+        id: n._id.toString(),
+        title: n.title,
+        dataStatus: n.data?.status,
+        investmentId: n.data?.investmentId,
+      })),
+  });
   res.status(200).json(new ApiResponse(200, result, "Notifications"));
 });
 
@@ -33,4 +45,9 @@ const unreadCount = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, { count }, "Unread count"));
 });
 
-module.exports = { list, markRead, markAllRead, remove, unreadCount };
+const getById = asyncHandler(async (req, res) => {
+  const n = await notif.getById(req.params.id, req.user._id);
+  res.status(200).json(new ApiResponse(200, { notification: n }, "Notification detail"));
+});
+
+module.exports = { list, markRead, markAllRead, remove, unreadCount, getById };
