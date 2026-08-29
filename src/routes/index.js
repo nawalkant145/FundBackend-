@@ -37,5 +37,8 @@ router.use("/enrollment", require("../modules/enrollment/enrollment.routes"));
 router.use("/payment", require("../modules/payment/payment.routes"));
 router.use("/deal-room", require("../modules/dealRoom/dealRoom.routes"));
 router.use("/deal-rooms", require("../modules/dealRoom/dealRoom.routes"));
+router.use("/funding", require("../modules/funding/funding.routes"));
+router.use("/event", require("../modules/event/event.routes"));
+router.use("/events", require("../modules/event/event.routes"));
 
 module.exports = router;
