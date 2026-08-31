@@ -6,6 +6,7 @@ const Call = require("../call/call.model");
 const Comment = require("../comment/comment.model");
 const Notification = require("../notification/notification.model");
 const { Chat, Message } = require("../chat/chat.model");
+const KYC = require("../kyc/kyc.model");
 const ApiError = require("../../utils/ApiError");
 const notif = require("../notification/notification.service");
 const { sendEmail } = require("../../utils/sendEmail");
@@ -636,7 +637,6 @@ const listTrash = async ({ limit = 50, cursor } = {}) => {
 };
 
 // ─── KYC & Compliance Workspace (Level 1 to 5) ─────────────
-const KYC = require("../kyc/kyc.model");
 const Company = require("../company/company.model");
 const InvestmentKYC = require("../investmentKyc/investmentKyc.model");
 const RiskAssessment = require("../risk/risk.model");
