@@ -10,7 +10,7 @@ const companySchema = new mongoose.Schema(
     },
     companyName: { type: String, required: true, trim: true },
     CIN: { type: String, required: true, trim: true, index: true },
-    companyPAN: { type: String, required: true, trim: true },
+    companyPAN: { type: String, default: "", trim: true },
     registrationCertificate: { type: String, required: true },
     
     // Optional Supporting Verification Documents (Non-blocking for early stage)
@@ -23,7 +23,7 @@ const companySchema = new mongoose.Schema(
     // Company Profile & Entity Details
     registeredOfficeAddress: { type: String, default: "" },
     website: { type: String, default: "" },
-    businessEmail: { type: String, required: true, lowercase: true, trim: true },
+    businessEmail: { type: String, default: "", lowercase: true, trim: true },
     directors: [
       {
         name: { type: String, default: "" },

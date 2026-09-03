@@ -8,120 +8,7 @@ const ApiError = require("../../utils/ApiError");
 const kycEvents = require("../../events/kyc.events");
 const digilockerService = require("../../services/digilocker.service");
 const path = require("path");
-const { uploadToS3 } = require("../../config/aws");
-
-const fs = require("fs");
-
-const processFileUploadToS3 = async (file, folder = "identity") => {
-  if (!file) return "";
-
-  // Case A: Multer Disk Storage file object
-  if (typeof file === "object" && file.path) {
-    console.log("📤 Identity file received (Multer Disk Storage):", {
-      fileName: file.originalname || path.basename(file.path),
-      filePath: file.path,
-      mimetype: file.mimetype,
-      size: file.size,
-    });
-    const s3Key = `uploads/${folder}/${Date.now()}-${file.filename || path.basename(file.path)}`;
-    console.log("☁️ Calling uploadToS3()...", { localPath: file.path, s3Key });
-    try {
-      const uploadResult = await uploadToS3(file.path, s3Key, false, {
-        contentType: file.mimetype,
-      });
-      console.log("✅ S3 upload result:", uploadResult);
-      return uploadResult.url;
-    } catch (error) {
-      console.error("❌ Identity S3 upload failed:", error);
-      throw error;
-    }
-  }
-
-  // Case B: Base64 Data URI string (e.g., "data:image/jpeg;base64,...")
-  if (typeof file === "string" && file.startsWith("data:")) {
-    console.log("📤 Identity file received (Base64 Data URI string)");
-    try {
-      const matches = file.match(/^data:(.+);base64,(.+)$/);
-      if (!matches || matches.length !== 3) {
-        throw new ApiError(400, "Invalid base64 image data URI format");
-      }
-      const mimetype = matches[1];
-      const base64Data = matches[2];
-      const buffer = Buffer.from(base64Data, "base64");
-      const ext = mimetype.split("/")[1] || "png";
-
-      const tempDir = path.join(process.cwd(), "tmp", "uploads");
-      fs.mkdirSync(tempDir, { recursive: true });
-      const tempFilePath = path.join(tempDir, `base64-${Date.now()}-${Math.round(Math.random() * 1e9)}.${ext}`);
-      fs.writeFileSync(tempFilePath, buffer);
-
-      const s3Key = `uploads/${folder}/${Date.now()}-base64.${ext}`;
-      console.log("☁️ Calling uploadToS3() for base64 file...", { localPath: tempFilePath, s3Key });
-      const uploadResult = await uploadToS3(tempFilePath, s3Key, false, { contentType: mimetype });
-      console.log("✅ S3 upload result for base64:", uploadResult);
-      return uploadResult.url;
-    } catch (error) {
-      console.error("❌ Base64 S3 upload failed:", error);
-      throw error;
-    }
-  }
-
-  // Case C: Standard HTTP / HTTPS URL
-  if (typeof file === "string" && (file.startsWith("http://") || file.startsWith("https://"))) {
-    return file;
-  }
-
-  // Reject invalid Blob URLs
-  if (typeof file === "string" && file.startsWith("blob:")) {
-    console.error("❌ Blob URL received instead of binary file or base64 payload:", file);
-    throw new ApiError(400, "Blob URLs cannot be saved. Please send binary file or base64 data.");
-  }
-
-  if (typeof file === "string" && file.trim().length > 0) {
-    return file;
-  }
-
-  return "";
-};
-
-const resolveFileAndUpload = async (keyNames = [], body = {}, files = null, singleFile = null, folder = "identity") => {
-  const keys = Array.isArray(keyNames) ? keyNames : [keyNames];
-  let fileToUpload = null;
-
-  // 1. Check array files (e.g., from uploadDocument.any())
-  if (Array.isArray(files)) {
-    fileToUpload = files.find((f) => keys.includes(f.fieldname));
-  }
-  // 2. Check object files (e.g., from uploadDocument.fields())
-  else if (files && typeof files === "object") {
-    for (const key of keys) {
-      if (files[key] && files[key][0]) {
-        fileToUpload = files[key][0];
-        break;
-      }
-    }
-  }
-
-  // 3. Check single file (req.file)
-  if (!fileToUpload && singleFile) {
-    if (keys.some((k) => singleFile.fieldname === k || k === "documentFront" || k === "selfie" || k === "file")) {
-      fileToUpload = singleFile;
-    }
-  }
-
-  // 4. Check body (req.body)
-  if (!fileToUpload && body) {
-    for (const key of keys) {
-      if (body[key]) {
-        fileToUpload = body[key];
-        break;
-      }
-    }
-  }
-
-  if (!fileToUpload) return "";
-  return processFileUploadToS3(fileToUpload, folder);
-};
+const { verifyS3Object, s3UrlToKey } = require("../../config/aws");
 
 
 // Unified Level Status Card & Progress Calculator
@@ -207,47 +94,36 @@ const generateReferenceId = () => {
   return `KYC-${dateStr}-${rand}`;
 };
 
-// Phase 2 Personal Identity Submission (manual upload path with AWS S3)
-const submitPersonalKyc = async (userId, body = {}, files = {}, singleFile = null) => {
+// Phase 2 Personal Identity Submission (manual upload path with AWS S3 Direct Upload)
+const submitPersonalKyc = async (userId, body = {}) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
-
-  console.log("========== KYC SERVICE FILE DEBUG ==========");
-  console.log("Files received by service:", files);
-  console.log(
-    "Document front:",
-    Array.isArray(files)
-      ? files.find((f) => ["documentFront", "frontImage", "identityFront", "front", "panCard"].includes(f.fieldname))
-      : files?.documentFront || files?.frontImage || files?.panCard
-  );
-  console.log(
-    "Document back:",
-    Array.isArray(files)
-      ? files.find((f) => ["documentBack", "backImage", "identityBack", "back", "aadhar"].includes(f.fieldname))
-      : files?.documentBack || files?.backImage || files?.aadhar
-  );
-  console.log(
-    "Selfie:",
-    Array.isArray(files)
-      ? files.find((f) => ["selfie", "selfieImage"].includes(f.fieldname))
-      : files?.selfie || files?.selfieImage
-  );
-  console.log("============================================");
 
   const documentType = body.documentType || body.type || "pan";
   const documentNumber = body.documentNumber || "";
 
-  const frontKeys = ["documentFront", "frontImage", "identityFront", "front", "panCard", "idFront", "file", "document", "image"];
-  const backKeys = ["documentBack", "backImage", "identityBack", "back", "aadhar", "idBack"];
-  const selfieKeys = ["selfie", "selfieImage"];
+  const documentFrontKey = s3UrlToKey(body.documentFront || body.frontImage || body.panCard || body.idFront);
+  const documentBackKey = s3UrlToKey(body.documentBack || body.backImage || body.aadhar || body.idBack);
+  const selfieKey = s3UrlToKey(body.selfie || body.selfieImage);
 
-  let frontUrl = await resolveFileAndUpload(frontKeys, body, files, singleFile, "identity/front");
-  let backUrl = await resolveFileAndUpload(backKeys, body, files, singleFile, "identity/back");
-  let selfieUrl = await resolveFileAndUpload(selfieKeys, body, files, singleFile, "identity/selfie");
-
-  if (!documentType || !frontUrl || !selfieUrl) {
-    throw new ApiError(400, "documentType, documentFront (or front image), and selfie are required for identity verification");
+  if (!documentType || !documentFrontKey || !selfieKey) {
+    throw new ApiError(400, "documentType, documentFront S3 key, and selfie S3 key are required");
   }
+
+  if (
+    (typeof body.documentFront === "string" && body.documentFront.startsWith("data:")) ||
+    (typeof body.selfie === "string" && body.selfie.startsWith("data:"))
+  ) {
+    throw new ApiError(
+      400,
+      "Base64 image data URIs are not accepted. Please upload files directly to S3 using POST /api/v1/upload/presigned-url and pass the returned S3 key."
+    );
+  }
+
+  // Verify S3 objects exist in bucket, are in identity folder, and belong to authenticated userId
+  await verifyS3Object(documentFrontKey, "kyc", userId);
+  if (documentBackKey) await verifyS3Object(documentBackKey, "kyc", userId);
+  await verifyS3Object(selfieKey, "kyc", userId);
 
   const docHash = documentNumber
     ? crypto.createHash("sha256").update(documentNumber.trim().toUpperCase()).digest("hex")
@@ -277,16 +153,16 @@ const submitPersonalKyc = async (userId, body = {}, files = {}, singleFile = nul
     documentType,
     documentNumber: documentNumber ? documentNumber.trim() : "",
     documentNumberHash: docHash,
-    documentFront: frontUrl,
-    documentBack: backUrl || "",
-    selfie: selfieUrl,
+    documentFront: documentFrontKey,
+    documentBack: documentBackKey || "",
+    selfie: selfieKey,
     verificationStatus: "under_review",
     verificationMethod: "manual",
     history: [
       {
         action: "submitted",
         performedBy: userId,
-        notes: "Initial document submission received",
+        notes: "Initial document submission received via Direct S3 Upload",
         timestamp: new Date(),
       },
     ],
@@ -295,8 +171,8 @@ const submitPersonalKyc = async (userId, body = {}, files = {}, singleFile = nul
   user.kycStatus = "under_review";
   user.documents = {
     referenceId,
-    panCard: frontUrl,
-    aadhar: backUrl || "",
+    panCard: documentFrontKey,
+    aadhar: documentBackKey || "",
     status: "under_review",
     submittedAt: new Date(),
   };
@@ -307,47 +183,36 @@ const submitPersonalKyc = async (userId, body = {}, files = {}, singleFile = nul
   return kyc;
 };
 
-// Resubmit Personal Identity Docs (manual upload path with AWS S3)
-const resubmitPersonalKyc = async (userId, body = {}, files = {}, singleFile = null) => {
+// Resubmit Personal Identity Docs (manual upload path with AWS S3 Direct Upload)
+const resubmitPersonalKyc = async (userId, body = {}) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
-
-  console.log("========== KYC SERVICE FILE DEBUG ==========");
-  console.log("Files received by service:", files);
-  console.log(
-    "Document front:",
-    Array.isArray(files)
-      ? files.find((f) => ["documentFront", "frontImage", "identityFront", "front", "panCard"].includes(f.fieldname))
-      : files?.documentFront || files?.frontImage || files?.panCard
-  );
-  console.log(
-    "Document back:",
-    Array.isArray(files)
-      ? files.find((f) => ["documentBack", "backImage", "identityBack", "back", "aadhar"].includes(f.fieldname))
-      : files?.documentBack || files?.backImage || files?.aadhar
-  );
-  console.log(
-    "Selfie:",
-    Array.isArray(files)
-      ? files.find((f) => ["selfie", "selfieImage"].includes(f.fieldname))
-      : files?.selfie || files?.selfieImage
-  );
-  console.log("============================================");
 
   const documentType = body.documentType || body.type || "pan";
   const documentNumber = body.documentNumber || "";
 
-  const frontKeys = ["documentFront", "frontImage", "identityFront", "front", "panCard", "idFront", "file", "document", "image"];
-  const backKeys = ["documentBack", "backImage", "identityBack", "back", "aadhar", "idBack"];
-  const selfieKeys = ["selfie", "selfieImage"];
+  const documentFrontKey = s3UrlToKey(body.documentFront || body.frontImage || body.panCard || body.idFront);
+  const documentBackKey = s3UrlToKey(body.documentBack || body.backImage || body.aadhar || body.idBack);
+  const selfieKey = s3UrlToKey(body.selfie || body.selfieImage);
 
-  let frontUrl = await resolveFileAndUpload(frontKeys, body, files, singleFile, "identity/front");
-  let backUrl = await resolveFileAndUpload(backKeys, body, files, singleFile, "identity/back");
-  let selfieUrl = await resolveFileAndUpload(selfieKeys, body, files, singleFile, "identity/selfie");
-
-  if (!documentType || !frontUrl || !selfieUrl) {
-    throw new ApiError(400, "documentType, documentFront (or front image), and selfie are required for identity verification");
+  if (!documentType || !documentFrontKey || !selfieKey) {
+    throw new ApiError(400, "documentType, documentFront S3 key, and selfie S3 key are required");
   }
+
+  if (
+    (typeof body.documentFront === "string" && body.documentFront.startsWith("data:")) ||
+    (typeof body.selfie === "string" && body.selfie.startsWith("data:"))
+  ) {
+    throw new ApiError(
+      400,
+      "Base64 image data URIs are not accepted. Please upload files directly to S3 using POST /api/v1/upload/presigned-url and pass the returned S3 key."
+    );
+  }
+
+  // Verify S3 objects exist in bucket, are in identity folder, and belong to authenticated userId
+  await verifyS3Object(documentFrontKey, "kyc", userId);
+  if (documentBackKey) await verifyS3Object(documentBackKey, "kyc", userId);
+  await verifyS3Object(selfieKey, "kyc", userId);
 
   const prevKyc = await KYC.findOne({ userId }).sort({ createdAt: -1 });
   const attemptsCount = (prevKyc?.attemptsCount || 1) + 1;
@@ -364,9 +229,9 @@ const resubmitPersonalKyc = async (userId, body = {}, files = {}, singleFile = n
     documentType,
     documentNumber: documentNumber ? documentNumber.trim() : "",
     documentNumberHash: docHash,
-    documentFront: frontUrl,
-    documentBack: backUrl || "",
-    selfie: selfieUrl,
+    documentFront: documentFrontKey,
+    documentBack: documentBackKey || "",
+    selfie: selfieKey,
     verificationStatus: "under_review",
     verificationMethod: "manual",
     attemptsCount,
@@ -375,7 +240,7 @@ const resubmitPersonalKyc = async (userId, body = {}, files = {}, singleFile = n
       {
         action: "resubmitted",
         performedBy: userId,
-        notes: `Resubmission attempt #${attemptsCount}`,
+        notes: `Resubmission attempt #${attemptsCount} via Direct S3 Upload`,
         timestamp: new Date(),
       },
     ],
@@ -384,8 +249,8 @@ const resubmitPersonalKyc = async (userId, body = {}, files = {}, singleFile = n
   user.kycStatus = "under_review";
   user.documents = {
     referenceId,
-    panCard: frontUrl,
-    aadhar: backUrl || "",
+    panCard: documentFrontKey,
+    aadhar: documentBackKey || "",
     status: "under_review",
     rejectionReason: "",
     submittedAt: new Date(),
@@ -406,25 +271,49 @@ const getKycById = async (id) => {
   return kyc;
 };
 
-// Phase 3 Founder Company Verification Submission (unchanged)
-const submitCompanyKyc = async (userId, { companyName, CIN, GST, registrationCertificate, companyPAN, startupIndiaCert, businessEmail }) => {
+// Phase 3 Founder Company Verification Submission
+const submitCompanyKyc = async (userId, body = {}) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
   if (user.role !== "founder") throw new ApiError(403, "Only founders can submit company verification");
 
-  if (!companyName || !CIN || !registrationCertificate || !companyPAN || !businessEmail) {
-    throw new ApiError(400, "companyName, CIN, registrationCertificate, companyPAN, and businessEmail are required");
+  const companyName = body.companyName ? String(body.companyName).trim() : "";
+  const CIN = body.CIN ? String(body.CIN).trim().toUpperCase() : "";
+  const registrationCertificateKey = s3UrlToKey(body.registrationCertificate);
+  const companyPAN = body.companyPAN ? String(body.companyPAN).trim().toUpperCase() : "";
+  const startupIndiaCertKey = body.startupIndiaCert ? s3UrlToKey(body.startupIndiaCert) : "";
+  const businessEmail = body.businessEmail ? String(body.businessEmail).trim().toLowerCase() : "";
+  const GST = body.GST ? String(body.GST).trim().toUpperCase() : "";
+
+  if (!companyName || !CIN || !registrationCertificateKey) {
+    throw new ApiError(400, "companyName, CIN, and registrationCertificate are required");
+  }
+
+  if (registrationCertificateKey.startsWith("data:")) {
+    throw new ApiError(
+      400,
+      "Base64 image data URIs are not accepted. Please upload registration certificate directly to S3 using POST /api/v1/upload/presigned-url and pass the returned S3 key."
+    );
+  }
+
+  // Verify registrationCertificate S3 key exists in bucket and belongs to authenticated userId
+  const certType = registrationCertificateKey.includes("uploads/company/") ? "company" : "document";
+  await verifyS3Object(registrationCertificateKey, certType, userId);
+
+  if (startupIndiaCertKey) {
+    const certUploadType = startupIndiaCertKey.includes("uploads/company/") ? "company" : "document";
+    await verifyS3Object(startupIndiaCertKey, certUploadType, userId);
   }
 
   const company = await Company.create({
     founderId: userId,
-    companyName: companyName.trim(),
-    CIN: CIN.trim().toUpperCase(),
-    GST: GST ? GST.trim().toUpperCase() : "",
-    registrationCertificate,
-    companyPAN: companyPAN.trim().toUpperCase(),
-    startupIndiaCert: startupIndiaCert || "",
-    businessEmail: businessEmail.trim().toLowerCase(),
+    companyName,
+    CIN,
+    GST: GST || "",
+    registrationCertificate: registrationCertificateKey,
+    companyPAN: companyPAN || "",
+    startupIndiaCert: startupIndiaCertKey || "",
+    businessEmail: businessEmail || user.email || "",
     verificationStatus: "pending",
   });
 

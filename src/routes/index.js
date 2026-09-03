@@ -41,4 +41,7 @@ router.use("/funding", require("../modules/funding/funding.routes"));
 router.use("/event", require("../modules/event/event.routes"));
 router.use("/events", require("../modules/event/event.routes"));
 
+router.use("/upload", require("../modules/upload/upload.routes"));
+router.use("/uploads", require("../modules/upload/upload.routes"));
+
 module.exports = router;

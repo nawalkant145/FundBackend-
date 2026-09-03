@@ -3,6 +3,7 @@ const {
   PutObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
 } = require("@aws-sdk/client-s3");
 const { getSignedUrl: getS3PresignedUrl } = require("@aws-sdk/s3-request-presigner");
 const fs = require("fs");
@@ -149,6 +150,280 @@ const getPresignedUrl = async (s3Key, expiresInSeconds = 3600) => {
   }
 };
 
+const crypto = require("crypto");
+
+const MIME_EXTENSION_MAP = {
+  "image/jpeg": [".jpg", ".jpeg"],
+  "image/png": [".png"],
+  "image/webp": [".webp"],
+  "image/gif": [".gif"],
+  "application/pdf": [".pdf"],
+  "application/msword": [".doc"],
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+  "video/mp4": [".mp4"],
+  "video/quicktime": [".mov"],
+  "video/webm": [".webm"],
+  "audio/mpeg": [".mp3"],
+  "audio/wav": [".wav"],
+};
+
+const UPLOAD_CONFIG = {
+  kyc: {
+    folder: "identity",
+    allowedMimeTypes: ["image/jpeg", "image/png", "image/webp", "application/pdf"],
+    maxSizeBytes: 10 * 1024 * 1024, // 10MB
+    isPrivate: true,
+  },
+  avatar: {
+    folder: "avatars",
+    allowedMimeTypes: ["image/jpeg", "image/png", "image/webp"],
+    maxSizeBytes: 5 * 1024 * 1024, // 5MB
+    isPrivate: false,
+  },
+  company: {
+    folder: "company",
+    allowedMimeTypes: [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ],
+    maxSizeBytes: 15 * 1024 * 1024, // 15MB
+    isPrivate: false,
+    requiredRoles: ["founder", "admin"],
+  },
+  document: {
+    folder: "documents",
+    allowedMimeTypes: [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ],
+    maxSizeBytes: 15 * 1024 * 1024, // 15MB
+    isPrivate: false,
+  },
+  pitchDeck: {
+    folder: "pitch-decks",
+    allowedMimeTypes: [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-powerpoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ],
+    maxSizeBytes: 50 * 1024 * 1024, // 50MB
+    isPrivate: true,
+    requiredRoles: ["founder", "admin"],
+  },
+  courseMedia: {
+    folder: "courses",
+    allowedMimeTypes: ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm", "application/pdf"],
+    maxSizeBytes: 200 * 1024 * 1024, // 200MB
+    isPrivate: false,
+    requiredRoles: ["admin"],
+  },
+  chat: {
+    folder: "chats",
+    allowedMimeTypes: [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "application/pdf",
+      "video/mp4",
+      "audio/mpeg",
+    ],
+    maxSizeBytes: 50 * 1024 * 1024, // 50MB
+    isPrivate: false,
+  },
+};
+
+/**
+ * Generates an S3 Presigned PUT URL for direct frontend-to-S3 file uploads
+ */
+const generateUploadPresignedUrl = async ({
+  uploadType,
+  fileName,
+  contentType,
+  user = null,
+}) => {
+  if (!isStorageInitialized) {
+    throw new ApiError(500, "AWS S3 Storage service is not configured");
+  }
+
+  if (!uploadType || !fileName || !contentType) {
+    throw new ApiError(400, "uploadType, fileName, and contentType are required");
+  }
+
+  const config = UPLOAD_CONFIG[uploadType];
+  if (!config) {
+    throw new ApiError(
+      400,
+      `Invalid uploadType '${uploadType}'. Allowed types: ${Object.keys(UPLOAD_CONFIG).join(", ")}`
+    );
+  }
+
+  // Authorize User Role if required
+  if (config.requiredRoles && config.requiredRoles.length > 0) {
+    const userRole = user?.role || "user";
+    if (!config.requiredRoles.includes(userRole)) {
+      throw new ApiError(403, `User role '${userRole}' is not authorized to upload type '${uploadType}'`);
+    }
+  }
+
+  // Validate ContentType MIME type
+  const cleanContentType = String(contentType).toLowerCase().trim();
+  if (!config.allowedMimeTypes.includes(cleanContentType)) {
+    throw new ApiError(
+      400,
+      `MIME type '${contentType}' not allowed for '${uploadType}'. Allowed: ${config.allowedMimeTypes.join(", ")}`
+    );
+  }
+
+  // Validate Extension matches ContentType strictly
+  const ext = path.extname(fileName).toLowerCase();
+  const allowedExtensions = MIME_EXTENSION_MAP[cleanContentType];
+  if (!ext || !allowedExtensions || !allowedExtensions.includes(ext)) {
+    throw new ApiError(
+      400,
+      `File extension '${ext}' does not match MIME type '${cleanContentType}'. Allowed extensions for '${cleanContentType}': ${allowedExtensions ? allowedExtensions.join(", ") : "none"}`
+    );
+  }
+
+  // Generate Unique S3 Key using crypto.randomUUID()
+  const userIdStr = user?._id ? user._id.toString() : "public";
+  const baseName = path.basename(fileName, ext).replace(/[^a-zA-Z0-9_-]/g, "_");
+  const uniqueKey = `uploads/${config.folder}/${userIdStr}/${crypto.randomUUID()}-${baseName}${ext}`;
+
+  const bucket = process.env.AWS_S3_BUCKET;
+  const region = process.env.AWS_REGION;
+  const expiresInSeconds = 900; // Fixed 15 minutes security expiry
+
+  const command = new PutObjectCommand({
+    Bucket: bucket,
+    Key: uniqueKey,
+    ContentType: cleanContentType,
+  });
+
+  try {
+    const uploadUrl = await getS3PresignedUrl(s3Client, command, {
+      expiresIn: expiresInSeconds,
+    });
+
+    return {
+      uploadUrl,
+      key: uniqueKey,
+      expiresIn: expiresInSeconds,
+      maxSizeBytes: config.maxSizeBytes,
+      isPrivate: config.isPrivate,
+    };
+  } catch (err) {
+    console.error("❌ [AWS Storage] Failed to generate presigned upload URL:", err.message);
+    throw new ApiError(500, `Presigned upload URL generation failed: ${err.message}`);
+  }
+};
+
+/**
+ * Verifies that an object exists in S3 and validates key ownership / folder prefix / actual ContentType / max size
+ */
+const verifyS3Object = async (s3Key, expectedUploadType = null, userId = null) => {
+  if (!isStorageInitialized) {
+    throw new ApiError(500, "AWS S3 Storage service is not configured");
+  }
+
+  if (!s3Key || typeof s3Key !== "string") {
+    throw new ApiError(400, "s3Key is required");
+  }
+
+  const cleanKey = s3UrlToKey(s3Key);
+
+  if (!cleanKey.startsWith("uploads/")) {
+    console.error("❌ [verifyS3Object] Invalid S3 key path prefix:", {
+      rawInput: s3Key,
+      extractedCleanKey: cleanKey,
+      expectedPrefix: "uploads/",
+    });
+    throw new ApiError(
+      403,
+      `Access denied: Invalid S3 key path prefix. Received key '${cleanKey}' (must start with 'uploads/'). Make sure to submit the 'key' returned by /api/v1/upload/presigned-url.`
+    );
+  }
+
+  if (expectedUploadType && UPLOAD_CONFIG[expectedUploadType]) {
+    const expectedFolder = UPLOAD_CONFIG[expectedUploadType].folder;
+    if (!cleanKey.startsWith(`uploads/${expectedFolder}/`)) {
+      throw new ApiError(
+        403,
+        `S3 key mismatch: Expected uploadType '${expectedUploadType}' in folder '${expectedFolder}'`
+      );
+    }
+  }
+
+  // Strict ownership validation via exact expected prefix uploads/{folder}/{userId}/
+  if (userId && expectedUploadType && UPLOAD_CONFIG[expectedUploadType]) {
+    const expectedFolder = UPLOAD_CONFIG[expectedUploadType].folder;
+    const userIdStr = userId.toString();
+    const expectedPrefix = `uploads/${expectedFolder}/${userIdStr}/`;
+    if (!cleanKey.startsWith(expectedPrefix)) {
+      throw new ApiError(
+        403,
+        "Access denied: You do not own this S3 object or key structure is invalid"
+      );
+    }
+  } else if (userId) {
+    const userIdStr = userId.toString();
+    const parts = cleanKey.split("/");
+    if (parts.length >= 3 && parts[2] !== userIdStr) {
+      throw new ApiError(403, "Access denied: You do not own this S3 object");
+    }
+  }
+
+  const command = new HeadObjectCommand({
+    Bucket: process.env.AWS_S3_BUCKET,
+    Key: cleanKey,
+  });
+
+  try {
+    const headData = await s3Client.send(command);
+
+    // Validate actual S3 ContentType and ContentLength against upload configuration
+    if (expectedUploadType && UPLOAD_CONFIG[expectedUploadType]) {
+      const config = UPLOAD_CONFIG[expectedUploadType];
+      const actualContentType = String(headData.ContentType || "").toLowerCase().trim();
+
+      if (config.allowedMimeTypes && !config.allowedMimeTypes.includes(actualContentType)) {
+        throw new ApiError(
+          403,
+          `Uploaded file has an invalid content type '${actualContentType}'. Expected: ${config.allowedMimeTypes.join(", ")}`
+        );
+      }
+
+      if (config.maxSizeBytes && headData.ContentLength > config.maxSizeBytes) {
+        throw new ApiError(
+          400,
+          `Uploaded file size (${headData.ContentLength} bytes) exceeds maximum limit of ${config.maxSizeBytes} bytes`
+        );
+      }
+    }
+
+    return {
+      verified: true,
+      key: cleanKey,
+      contentLength: headData.ContentLength,
+      contentType: headData.ContentType,
+      lastModified: headData.LastModified,
+    };
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    console.error(`❌ [AWS Storage] S3 object verification failed for key ${cleanKey}:`, err.message);
+    throw new ApiError(404, `S3 object does not exist or has expired. Please upload the file first.`);
+  }
+};
+
 /**
  * Uploads local Multer temporary file to AWS S3 bucket
  */
@@ -291,6 +566,9 @@ module.exports = {
   streamFromS3,
   getPresignedUrl,
   getSignedUrl: getPresignedUrl,
+  generateUploadPresignedUrl,
+  verifyS3Object,
+  UPLOAD_CONFIG,
   s3UrlToKey,
   cfUrlToS3Key: s3UrlToKey,
 };
