@@ -43,7 +43,7 @@ const errorHandler = (err, req, res, next) => {
     message = "Token expired";
   }
 
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && err.name !== "TokenExpiredError" && err.name !== "JsonWebTokenError") {
     console.error("❌ Error:", err);
   }
 
