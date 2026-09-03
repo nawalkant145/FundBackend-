@@ -106,6 +106,7 @@ app.use("/api", globalLimiter);
 app.get("/api/health", async (req, res) => {
   const mongoose = require("mongoose");
   const { getClient } = require("./config/redis");
+  const { getStorageStatus } = require("./config/aws");
   let redisOk = false;
   try {
     const c = getClient();
@@ -120,6 +121,7 @@ app.get("/api/health", async (req, res) => {
     services: {
       mongo: mongoose.connection.readyState === 1,
       redis: redisOk,
+      awsStorage: getStorageStatus(),
     },
   });
 });

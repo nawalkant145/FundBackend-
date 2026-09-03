@@ -12,4 +12,7 @@ logs/
 coverage/
 scratch/
 tmp/
+keys/
+keys/private_key.pem
+
 

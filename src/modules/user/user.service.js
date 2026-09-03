@@ -2,6 +2,8 @@ const User = require("./user.model");
 const Video = require("../video/video.model");
 const ProfileView = require("../profileView/profileView.model");
 const ApiError = require("../../utils/ApiError");
+const path = require("path");
+const { uploadToS3 } = require("../../config/aws");
 const {
   uploadImageToCloudinary,
   uploadDocumentToCloudinary,
@@ -311,25 +313,61 @@ const submitDocuments = async (userId, files) => {
   }
   const updates = { ...(user.documents.toObject?.() || user.documents) };
   if (files.panCard?.[0]) {
-    const r = await uploadDocumentToCloudinary(
-      files.panCard[0].path,
-      "documents/pan",
-    );
-    updates.panCard = r.url;
+    const file = files.panCard[0];
+    console.log("📤 Identity file received:", {
+      fileName: file.originalname || path.basename(file.path),
+      filePath: file.path,
+      mimetype: file.mimetype,
+      size: file.size,
+    });
+    const s3Key = `uploads/documents/pan/${Date.now()}-${file.filename || path.basename(file.path)}`;
+    console.log("☁️ Calling uploadToS3()...", { localPath: file.path, s3Key });
+    try {
+      const r = await uploadToS3(file.path, s3Key, false, { contentType: file.mimetype });
+      console.log("✅ S3 upload result:", r);
+      updates.panCard = r.url;
+    } catch (err) {
+      console.error("❌ Identity S3 upload failed:", err);
+      throw err;
+    }
   }
   if (files.aadhar?.[0]) {
-    const r = await uploadDocumentToCloudinary(
-      files.aadhar[0].path,
-      "documents/aadhar",
-    );
-    updates.aadhar = r.url;
+    const file = files.aadhar[0];
+    console.log("📤 Identity file received:", {
+      fileName: file.originalname || path.basename(file.path),
+      filePath: file.path,
+      mimetype: file.mimetype,
+      size: file.size,
+    });
+    const s3Key = `uploads/documents/aadhar/${Date.now()}-${file.filename || path.basename(file.path)}`;
+    console.log("☁️ Calling uploadToS3()...", { localPath: file.path, s3Key });
+    try {
+      const r = await uploadToS3(file.path, s3Key, false, { contentType: file.mimetype });
+      console.log("✅ S3 upload result:", r);
+      updates.aadhar = r.url;
+    } catch (err) {
+      console.error("❌ Identity S3 upload failed:", err);
+      throw err;
+    }
   }
   if (files.businessReg?.[0]) {
-    const r = await uploadDocumentToCloudinary(
-      files.businessReg[0].path,
-      "documents/business",
-    );
-    updates.businessReg = r.url;
+    const file = files.businessReg[0];
+    console.log("📤 Identity file received:", {
+      fileName: file.originalname || path.basename(file.path),
+      filePath: file.path,
+      mimetype: file.mimetype,
+      size: file.size,
+    });
+    const s3Key = `uploads/documents/business/${Date.now()}-${file.filename || path.basename(file.path)}`;
+    console.log("☁️ Calling uploadToS3()...", { localPath: file.path, s3Key });
+    try {
+      const r = await uploadToS3(file.path, s3Key, false, { contentType: file.mimetype });
+      console.log("✅ S3 upload result:", r);
+      updates.businessReg = r.url;
+    } catch (err) {
+      console.error("❌ Identity S3 upload failed:", err);
+      throw err;
+    }
   }
   updates.status = "pending";
   updates.submittedAt = new Date();

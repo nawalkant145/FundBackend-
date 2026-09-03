@@ -15,14 +15,19 @@ router.get("/digilocker/callback", kycController.digilockerCallback);
 // optionalAuthenticate populates req.user if a valid token is present, else null.
 router.get("/digilocker/authorize", optionalAuthenticate, kycController.authorizeDigilocker);
 
+const { uploadDocument } = require("../../middlewares/upload.middleware");
+
+// Use uploadDocument.any() to handle any field name sent by the frontend
+const kycUpload = uploadDocument.any();
+
 router.use(authenticate);
 
 router.get("/status", kycController.getVerificationStatus);
 router.get("/:id", kycController.getKycDetails);
-router.post("/personal", kycController.submitPersonalKyc);
-router.put("/resubmit", kycController.resubmitPersonalKyc);
-router.post("/company", kycController.submitCompanyKyc);
-router.post("/investment", kycController.submitInvestmentKyc);
+router.post("/personal", kycUpload, kycController.submitPersonalKyc);
+router.put("/resubmit", kycUpload, kycController.resubmitPersonalKyc);
+router.post("/company", kycUpload, kycController.submitCompanyKyc);
+router.post("/investment", kycUpload, kycController.submitInvestmentKyc);
 
 // DigiLocker automatic verification (authenticated routes)
 router.get("/digilocker/status", kycController.getDigilockerStatus);

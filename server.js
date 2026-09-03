@@ -4,6 +4,7 @@ const app = require("./src/app");
 const connectDB = require("./src/config/db");
 const { initRedis } = require("./src/config/redis");
 const { initFirebase } = require("./src/config/firebase");
+const { initialize: initAWSStorage } = require("./src/config/aws");
 const { initSocket } = require("./src/socket");
 const { startCronJobs } = require("./src/cron");
 
@@ -13,6 +14,7 @@ const startServer = async () => {
   await connectDB();
   initRedis();
   initFirebase();
+  initAWSStorage();
 
   const server = http.createServer(app);
   initSocket(server);

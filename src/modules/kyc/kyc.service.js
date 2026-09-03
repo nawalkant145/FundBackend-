@@ -7,7 +7,122 @@ const User = require("../user/user.model");
 const ApiError = require("../../utils/ApiError");
 const kycEvents = require("../../events/kyc.events");
 const digilockerService = require("../../services/digilocker.service");
-const { matchIdentity } = require("../../utils/identityMatcher");
+const path = require("path");
+const { uploadToS3 } = require("../../config/aws");
+
+const fs = require("fs");
+
+const processFileUploadToS3 = async (file, folder = "identity") => {
+  if (!file) return "";
+
+  // Case A: Multer Disk Storage file object
+  if (typeof file === "object" && file.path) {
+    console.log("📤 Identity file received (Multer Disk Storage):", {
+      fileName: file.originalname || path.basename(file.path),
+      filePath: file.path,
+      mimetype: file.mimetype,
+      size: file.size,
+    });
+    const s3Key = `uploads/${folder}/${Date.now()}-${file.filename || path.basename(file.path)}`;
+    console.log("☁️ Calling uploadToS3()...", { localPath: file.path, s3Key });
+    try {
+      const uploadResult = await uploadToS3(file.path, s3Key, false, {
+        contentType: file.mimetype,
+      });
+      console.log("✅ S3 upload result:", uploadResult);
+      return uploadResult.url;
+    } catch (error) {
+      console.error("❌ Identity S3 upload failed:", error);
+      throw error;
+    }
+  }
+
+  // Case B: Base64 Data URI string (e.g., "data:image/jpeg;base64,...")
+  if (typeof file === "string" && file.startsWith("data:")) {
+    console.log("📤 Identity file received (Base64 Data URI string)");
+    try {
+      const matches = file.match(/^data:(.+);base64,(.+)$/);
+      if (!matches || matches.length !== 3) {
+        throw new ApiError(400, "Invalid base64 image data URI format");
+      }
+      const mimetype = matches[1];
+      const base64Data = matches[2];
+      const buffer = Buffer.from(base64Data, "base64");
+      const ext = mimetype.split("/")[1] || "png";
+
+      const tempDir = path.join(process.cwd(), "tmp", "uploads");
+      fs.mkdirSync(tempDir, { recursive: true });
+      const tempFilePath = path.join(tempDir, `base64-${Date.now()}-${Math.round(Math.random() * 1e9)}.${ext}`);
+      fs.writeFileSync(tempFilePath, buffer);
+
+      const s3Key = `uploads/${folder}/${Date.now()}-base64.${ext}`;
+      console.log("☁️ Calling uploadToS3() for base64 file...", { localPath: tempFilePath, s3Key });
+      const uploadResult = await uploadToS3(tempFilePath, s3Key, false, { contentType: mimetype });
+      console.log("✅ S3 upload result for base64:", uploadResult);
+      return uploadResult.url;
+    } catch (error) {
+      console.error("❌ Base64 S3 upload failed:", error);
+      throw error;
+    }
+  }
+
+  // Case C: Standard HTTP / HTTPS URL
+  if (typeof file === "string" && (file.startsWith("http://") || file.startsWith("https://"))) {
+    return file;
+  }
+
+  // Reject invalid Blob URLs
+  if (typeof file === "string" && file.startsWith("blob:")) {
+    console.error("❌ Blob URL received instead of binary file or base64 payload:", file);
+    throw new ApiError(400, "Blob URLs cannot be saved. Please send binary file or base64 data.");
+  }
+
+  if (typeof file === "string" && file.trim().length > 0) {
+    return file;
+  }
+
+  return "";
+};
+
+const resolveFileAndUpload = async (keyNames = [], body = {}, files = null, singleFile = null, folder = "identity") => {
+  const keys = Array.isArray(keyNames) ? keyNames : [keyNames];
+  let fileToUpload = null;
+
+  // 1. Check array files (e.g., from uploadDocument.any())
+  if (Array.isArray(files)) {
+    fileToUpload = files.find((f) => keys.includes(f.fieldname));
+  }
+  // 2. Check object files (e.g., from uploadDocument.fields())
+  else if (files && typeof files === "object") {
+    for (const key of keys) {
+      if (files[key] && files[key][0]) {
+        fileToUpload = files[key][0];
+        break;
+      }
+    }
+  }
+
+  // 3. Check single file (req.file)
+  if (!fileToUpload && singleFile) {
+    if (keys.some((k) => singleFile.fieldname === k || k === "documentFront" || k === "selfie" || k === "file")) {
+      fileToUpload = singleFile;
+    }
+  }
+
+  // 4. Check body (req.body)
+  if (!fileToUpload && body) {
+    for (const key of keys) {
+      if (body[key]) {
+        fileToUpload = body[key];
+        break;
+      }
+    }
+  }
+
+  if (!fileToUpload) return "";
+  return processFileUploadToS3(fileToUpload, folder);
+};
+
 
 // Unified Level Status Card & Progress Calculator
 const getVerificationStatus = async (userId) => {
@@ -92,13 +207,46 @@ const generateReferenceId = () => {
   return `KYC-${dateStr}-${rand}`;
 };
 
-// Phase 2 Personal Identity Submission (manual upload path — unchanged)
-const submitPersonalKyc = async (userId, { documentType, documentNumber, documentFront, documentBack, selfie }) => {
+// Phase 2 Personal Identity Submission (manual upload path with AWS S3)
+const submitPersonalKyc = async (userId, body = {}, files = {}, singleFile = null) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
 
-  if (!documentType || !documentFront || !selfie) {
-    throw new ApiError(400, "documentType, documentFront, and selfie are required");
+  console.log("========== KYC SERVICE FILE DEBUG ==========");
+  console.log("Files received by service:", files);
+  console.log(
+    "Document front:",
+    Array.isArray(files)
+      ? files.find((f) => ["documentFront", "frontImage", "identityFront", "front", "panCard"].includes(f.fieldname))
+      : files?.documentFront || files?.frontImage || files?.panCard
+  );
+  console.log(
+    "Document back:",
+    Array.isArray(files)
+      ? files.find((f) => ["documentBack", "backImage", "identityBack", "back", "aadhar"].includes(f.fieldname))
+      : files?.documentBack || files?.backImage || files?.aadhar
+  );
+  console.log(
+    "Selfie:",
+    Array.isArray(files)
+      ? files.find((f) => ["selfie", "selfieImage"].includes(f.fieldname))
+      : files?.selfie || files?.selfieImage
+  );
+  console.log("============================================");
+
+  const documentType = body.documentType || body.type || "pan";
+  const documentNumber = body.documentNumber || "";
+
+  const frontKeys = ["documentFront", "frontImage", "identityFront", "front", "panCard", "idFront", "file", "document", "image"];
+  const backKeys = ["documentBack", "backImage", "identityBack", "back", "aadhar", "idBack"];
+  const selfieKeys = ["selfie", "selfieImage"];
+
+  let frontUrl = await resolveFileAndUpload(frontKeys, body, files, singleFile, "identity/front");
+  let backUrl = await resolveFileAndUpload(backKeys, body, files, singleFile, "identity/back");
+  let selfieUrl = await resolveFileAndUpload(selfieKeys, body, files, singleFile, "identity/selfie");
+
+  if (!documentType || !frontUrl || !selfieUrl) {
+    throw new ApiError(400, "documentType, documentFront (or front image), and selfie are required for identity verification");
   }
 
   const docHash = documentNumber
@@ -129,9 +277,9 @@ const submitPersonalKyc = async (userId, { documentType, documentNumber, documen
     documentType,
     documentNumber: documentNumber ? documentNumber.trim() : "",
     documentNumberHash: docHash,
-    documentFront,
-    documentBack: documentBack || "",
-    selfie,
+    documentFront: frontUrl,
+    documentBack: backUrl || "",
+    selfie: selfieUrl,
     verificationStatus: "under_review",
     verificationMethod: "manual",
     history: [
@@ -147,8 +295,8 @@ const submitPersonalKyc = async (userId, { documentType, documentNumber, documen
   user.kycStatus = "under_review";
   user.documents = {
     referenceId,
-    panCard: documentFront,
-    aadhar: documentBack || "",
+    panCard: frontUrl,
+    aadhar: backUrl || "",
     status: "under_review",
     submittedAt: new Date(),
   };
@@ -159,13 +307,46 @@ const submitPersonalKyc = async (userId, { documentType, documentNumber, documen
   return kyc;
 };
 
-// Resubmit Personal Identity Docs (manual upload path — unchanged)
-const resubmitPersonalKyc = async (userId, { documentType, documentNumber, documentFront, documentBack, selfie }) => {
+// Resubmit Personal Identity Docs (manual upload path with AWS S3)
+const resubmitPersonalKyc = async (userId, body = {}, files = {}, singleFile = null) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
 
-  if (!documentType || !documentFront || !selfie) {
-    throw new ApiError(400, "documentType, documentFront, and selfie are required");
+  console.log("========== KYC SERVICE FILE DEBUG ==========");
+  console.log("Files received by service:", files);
+  console.log(
+    "Document front:",
+    Array.isArray(files)
+      ? files.find((f) => ["documentFront", "frontImage", "identityFront", "front", "panCard"].includes(f.fieldname))
+      : files?.documentFront || files?.frontImage || files?.panCard
+  );
+  console.log(
+    "Document back:",
+    Array.isArray(files)
+      ? files.find((f) => ["documentBack", "backImage", "identityBack", "back", "aadhar"].includes(f.fieldname))
+      : files?.documentBack || files?.backImage || files?.aadhar
+  );
+  console.log(
+    "Selfie:",
+    Array.isArray(files)
+      ? files.find((f) => ["selfie", "selfieImage"].includes(f.fieldname))
+      : files?.selfie || files?.selfieImage
+  );
+  console.log("============================================");
+
+  const documentType = body.documentType || body.type || "pan";
+  const documentNumber = body.documentNumber || "";
+
+  const frontKeys = ["documentFront", "frontImage", "identityFront", "front", "panCard", "idFront", "file", "document", "image"];
+  const backKeys = ["documentBack", "backImage", "identityBack", "back", "aadhar", "idBack"];
+  const selfieKeys = ["selfie", "selfieImage"];
+
+  let frontUrl = await resolveFileAndUpload(frontKeys, body, files, singleFile, "identity/front");
+  let backUrl = await resolveFileAndUpload(backKeys, body, files, singleFile, "identity/back");
+  let selfieUrl = await resolveFileAndUpload(selfieKeys, body, files, singleFile, "identity/selfie");
+
+  if (!documentType || !frontUrl || !selfieUrl) {
+    throw new ApiError(400, "documentType, documentFront (or front image), and selfie are required for identity verification");
   }
 
   const prevKyc = await KYC.findOne({ userId }).sort({ createdAt: -1 });
@@ -183,9 +364,9 @@ const resubmitPersonalKyc = async (userId, { documentType, documentNumber, docum
     documentType,
     documentNumber: documentNumber ? documentNumber.trim() : "",
     documentNumberHash: docHash,
-    documentFront,
-    documentBack: documentBack || "",
-    selfie,
+    documentFront: frontUrl,
+    documentBack: backUrl || "",
+    selfie: selfieUrl,
     verificationStatus: "under_review",
     verificationMethod: "manual",
     attemptsCount,
@@ -203,8 +384,8 @@ const resubmitPersonalKyc = async (userId, { documentType, documentNumber, docum
   user.kycStatus = "under_review";
   user.documents = {
     referenceId,
-    panCard: documentFront,
-    aadhar: documentBack || "",
+    panCard: frontUrl,
+    aadhar: backUrl || "",
     status: "under_review",
     rejectionReason: "",
     submittedAt: new Date(),
