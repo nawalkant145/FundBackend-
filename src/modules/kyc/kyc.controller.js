@@ -14,44 +14,23 @@ const getVerificationStatus = asyncHandler(async (req, res) => {
 });
 
 const submitPersonalKyc = asyncHandler(async (req, res) => {
-  console.log("========== KYC UPLOAD DEBUG ==========");
-  console.log("Content-Type:", req.headers["content-type"]);
-  console.log("req.body:", req.body);
-  console.log("req.file:", req.file);
-  console.log(
-    "req.files keys:",
-    req.files ? (Array.isArray(req.files) ? req.files.map((f) => f.fieldname) : Object.keys(req.files)) : "NO FILES"
-  );
-  console.log("req.files:", req.files);
-  console.log("======================================");
-
-  const kyc = await kycService.submitPersonalKyc(req.user._id, req.body, req.files, req.file);
+  console.log("📥 KYC Submit Request Body:", req.body);
+  const kyc = await kycService.submitPersonalKyc(req.user._id, req.body);
   res.status(201).json(new ApiResponse(201, kyc, "Personal KYC submitted for review"));
 });
 
 const submitCompanyKyc = asyncHandler(async (req, res) => {
-  const company = await kycService.submitCompanyKyc(req.user._id, req.body, req.files, req.file);
+  const company = await kycService.submitCompanyKyc(req.user._id, req.body);
   res.status(201).json(new ApiResponse(201, company, "Company verification submitted for review"));
 });
 
 const submitInvestmentKyc = asyncHandler(async (req, res) => {
-  const investorKyc = await kycService.submitInvestmentKyc(req.user._id, req.body, req.files, req.file);
+  const investorKyc = await kycService.submitInvestmentKyc(req.user._id, req.body);
   res.status(201).json(new ApiResponse(201, investorKyc, "Investment transaction KYC submitted for review"));
 });
 
 const resubmitPersonalKyc = asyncHandler(async (req, res) => {
-  console.log("========== KYC UPLOAD DEBUG ==========");
-  console.log("Content-Type:", req.headers["content-type"]);
-  console.log("req.body:", req.body);
-  console.log("req.file:", req.file);
-  console.log(
-    "req.files keys:",
-    req.files ? (Array.isArray(req.files) ? req.files.map((f) => f.fieldname) : Object.keys(req.files)) : "NO FILES"
-  );
-  console.log("req.files:", req.files);
-  console.log("======================================");
-
-  const kyc = await kycService.resubmitPersonalKyc(req.user._id, req.body, req.files, req.file);
+  const kyc = await kycService.resubmitPersonalKyc(req.user._id, req.body);
   res.status(200).json(new ApiResponse(200, kyc, "Personal KYC resubmitted for review"));
 });
 
