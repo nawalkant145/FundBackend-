@@ -95,7 +95,7 @@ const search = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, result, "Search results"));
 });
 
-// ─── Follow system ─────────────────────────────
+                                                  
 const followUser = asyncHandler(async (req, res) => {
   const result = await userService.followUser(req.user._id, req.params.userId);
   res.json(new ApiResponse(200, result, "Follow toggled"));

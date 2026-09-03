@@ -3,9 +3,7 @@ const ApiResponse = require("../../utils/ApiResponse");
 const ApiError = require("../../utils/ApiError");
 const { generateUploadPresignedUrl } = require("../../config/aws");
 
-/**
- * Controller to generate an S3 Presigned PUT URL for direct frontend uploads
- */
+                                                                                       
 const getUploadPresignedUrl = asyncHandler(async (req, res) => {
   const { uploadType, fileName, contentType } = req.body;
 

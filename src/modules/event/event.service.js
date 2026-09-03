@@ -2,11 +2,11 @@ const Event = require("./event.model");
 const EventRegistration = require("./eventRegistration.model");
 const ApiError = require("../../utils/ApiError");
 
-// Get upcoming published events for users (sorted nearest start date first)
+                                                                            
 const getUpcomingEvents = async (userId, { limit = 10 } = {}) => {
   limit = Math.min(Number(limit) || 10, 50);
 
-  // Fetch published events starting from current date/time onwards (nearest first)
+                                                                                   
   const cutoffDate = new Date();
 
   const events = await Event.find({
@@ -22,7 +22,7 @@ const getUpcomingEvents = async (userId, { limit = 10 } = {}) => {
     return { events: [], registeredEventIds: [] };
   }
 
-  // Check user registration status for these events
+                                                    
   let registeredEventIds = [];
   if (userId) {
     const eventIds = events.map((e) => e._id);
@@ -48,7 +48,7 @@ const getUpcomingEvents = async (userId, { limit = 10 } = {}) => {
   };
 };
 
-// Register user for an event
+                             
 const registerForEvent = async (eventId, userId) => {
   const event = await Event.findOne({
     _id: eventId,
@@ -64,12 +64,12 @@ const registerForEvent = async (eventId, userId) => {
     throw new ApiError(400, "Registration is closed for past events");
   }
 
-  // Check capacity if set
+                          
   if (event.capacity > 0 && event.registeredCount >= event.capacity) {
     throw new ApiError(400, "Registration for this event is full");
   }
 
-  // Check if already registered
+                                
   const existing = await EventRegistration.findOne({ eventId, userId });
   if (existing && existing.status === "registered") {
     return {
@@ -93,7 +93,7 @@ const registerForEvent = async (eventId, userId) => {
     });
   }
 
-  // Update registeredCount accurately from database
+                                                    
   const count = await EventRegistration.countDocuments({
     eventId,
     status: "registered",
@@ -109,7 +109,7 @@ const registerForEvent = async (eventId, userId) => {
   };
 };
 
-// Get single event by ID
+                         
 const getEventById = async (eventId, userId) => {
   const event = await Event.findOne({ _id: eventId, isDeleted: { $ne: true } }).lean();
   if (!event) throw new ApiError(404, "Event not found");
@@ -131,7 +131,7 @@ const getEventById = async (eventId, userId) => {
   };
 };
 
-// Admin: Create Event
+                      
 const createEvent = async (adminId, data) => {
   if (!data.title || !data.startDate) {
     throw new ApiError(400, "Event title and start date are required");
@@ -154,7 +154,7 @@ const createEvent = async (adminId, data) => {
   return event;
 };
 
-// Admin: Update Event
+                      
 const updateEvent = async (eventId, data) => {
   const event = await Event.findOne({ _id: eventId, isDeleted: { $ne: true } });
   if (!event) throw new ApiError(404, "Event not found");
@@ -174,7 +174,7 @@ const updateEvent = async (eventId, data) => {
   return event;
 };
 
-// Admin: Soft delete event
+                           
 const deleteEvent = async (eventId) => {
   const event = await Event.findByIdAndUpdate(
     eventId,
@@ -185,7 +185,7 @@ const deleteEvent = async (eventId) => {
   return event;
 };
 
-// Admin: List all events (including drafts and completed)
+                                                          
 const getAdminEvents = async ({ limit = 20, page = 1, status } = {}) => {
   limit = Math.min(Number(limit) || 20, 100);
   page = Math.max(Number(page) || 1, 1);
@@ -207,7 +207,7 @@ const getAdminEvents = async ({ limit = 20, page = 1, status } = {}) => {
   };
 };
 
-// Admin: Get registered users for a specific event
+                                                   
 const getEventRegistrations = async (eventId, { limit = 20, page = 1 } = {}) => {
   limit = Math.min(Number(limit) || 20, 100);
   page = Math.max(Number(page) || 1, 1);
@@ -231,7 +231,7 @@ const getEventRegistrations = async (eventId, { limit = 20, page = 1 } = {}) => 
     EventRegistration.countDocuments(filter),
   ]);
 
-  // Synchronize cached registeredCount on Event document if needed
+                                                                   
   if (event.registeredCount !== total) {
     await Event.updateOne({ _id: eventId }, { registeredCount: total });
   }

@@ -26,8 +26,8 @@ function isParticipant(chat, userId) {
   return false;
 }
 
-// Investor starts chat with founder (or vice versa). Requires investor to have liked
-// at least one of founder's pitches (mutual interest signal).
+                                                                                     
+                                                              
 const startChat = async (initiatorId, targetId) => {
   if (!targetId) {
     throw new ApiError(400, "targetId required");
@@ -38,7 +38,7 @@ const startChat = async (initiatorId, targetId) => {
     throw new ApiError(404, "Target user not found");
   }
 
-  // Cannot chat with yourself
+                              
   if (initiatorId.toString() === resolvedTargetId.toString()) {
     throw new ApiError(400, "Cannot chat with yourself");
   }
@@ -66,7 +66,7 @@ const startChat = async (initiatorId, targetId) => {
     throw new ApiError(403, "You cannot message this user");
   }
 
-  // Determine actual founder vs investor based on real user roles
+                                                                  
   let founderId, investorId;
   if (initiator.role === "founder" && target.role !== "founder") {
     founderId = initiator._id;
@@ -75,13 +75,13 @@ const startChat = async (initiatorId, targetId) => {
     founderId = target._id;
     investorId = initiator._id;
   } else {
-    // If both have the same role (e.g. founder-founder), assign deterministically by ID
+                                                                                        
     const sorted = [initiator._id.toString(), target._id.toString()].sort();
     founderId = sorted[0];
     investorId = sorted[1];
   }
 
-  // Mutual interest check — if target is a founder, initiator must like pitch or follow
+                                                                                        
   if (target.role === "founder") {
     const hasLiked = await Video.exists({
       founderId: target._id,
@@ -106,7 +106,7 @@ const startChat = async (initiatorId, targetId) => {
     }
   }
 
-  // Find existing chat using all participant permutations to ensure ONE unique chat document
+                                                                                             
   let chat = await Chat.findOne({
     $or: [
       { participants: { $all: [initiatorId, resolvedTargetId] } },
@@ -116,7 +116,7 @@ const startChat = async (initiatorId, targetId) => {
     isActive: { $ne: false },
   });
 
-  // Subscription / free-tier gate for investors starting NEW conversations
+                                                                           
   if (initiator.role !== "founder" && !initiator.isProActive()) {
     if (
       !initiator.chatQuotaResetAt ||
@@ -148,7 +148,7 @@ const startChat = async (initiatorId, targetId) => {
       investorId,
     });
   } else {
-    // Ensure participants array is properly populated with both IDs
+                                                                    
     const partStrs = (chat.participants || []).map((id) => id.toString());
     if (
       !partStrs.includes(founderId.toString()) ||
@@ -159,7 +159,7 @@ const startChat = async (initiatorId, targetId) => {
     }
   }
 
-  // Always return a fully-populated chat so the frontend can render it immediately
+                                                                                   
   const populated = await Chat.findById(chat._id)
     .populate(
       "founderId",
@@ -245,7 +245,7 @@ const getMessages = async (chatId, userId, { cursor, limit = 30 } = {}) => {
   const hasMore = messages.length > limit;
   const items = (hasMore ? messages.slice(0, limit) : messages).reverse();
 
-  // Normalize message fields to match standard schema
+                                                      
   items.forEach((m) => {
     if (!m.message) m.message = m.text || "";
     if (!m.text) m.text = m.message || "";

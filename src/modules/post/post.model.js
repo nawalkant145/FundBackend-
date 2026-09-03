@@ -13,7 +13,7 @@ const postSchema = new mongoose.Schema(
       enum: ["images", "text"],
       default: "images",
     },
-    images: [{ type: String }], // Cloudinary URLs, max 10
+    images: [{ type: String }],                           
     caption: { type: String, default: "", maxlength: 2200 },
     link: { type: String, default: "" },
     hashtags: [{ type: String }],

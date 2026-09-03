@@ -13,12 +13,12 @@ const create = asyncHandler(async (req, res) => {
   res.status(201).json(new ApiResponse(201, { post }, "Post created"));
 });
 
-// Text-only "thoughts" post — images are never accepted here
+                                                             
 const createThoughts = asyncHandler(async (req, res) => {
   const post = await postService.createPost(
     req.user._id,
-    [], // no files — text only
-    { ...req.body, type: "text" }, // force type to text
+    [],                        
+    { ...req.body, type: "text" },                      
     req.user.role,
   );
   res.status(201).json(new ApiResponse(201, { post }, "Thought posted"));

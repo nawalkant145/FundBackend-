@@ -6,7 +6,7 @@ const { uploadDocument } = require("../../middlewares/upload.middleware");
 
 router.use(authenticate);
 
-// Deal Room CRUD & Operations
+                              
 router.post("/", controller.createDealRoom);
 router.get("/", controller.listDealRooms);
 router.get("/:id", controller.getDealRoom);

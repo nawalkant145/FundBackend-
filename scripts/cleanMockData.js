@@ -13,7 +13,7 @@ async function clean() {
     await mongoose.connect(mongoUri);
     console.log("Connected to MongoDB for mock data inspection.");
 
-    // 1. Find exact mock seed user(s) created by seedMockData.js
+                                                                 
     const exactMockQuery = {
       $or: [
         { email: "aisha.kamara@expglobusiness.com" },
@@ -33,7 +33,7 @@ async function clean() {
       console.log("\nNo mock seed users found in the database.");
     }
 
-    // Check for relationships referencing these mock users
+                                                           
     const mockUserIds = mockUsers.map((u) => u._id);
     let affectedRelationshipCount = 0;
 
@@ -48,19 +48,19 @@ async function clean() {
       console.log(`Found ${affectedRelationshipCount} user record(s) with follower/following links to mock user(s).`);
     }
 
-    // Safety Confirmation Check
+                                
     if (process.env.CLEAN_MOCK_DATA !== "true") {
       console.log("\nNo data deleted.");
       console.log("Set CLEAN_MOCK_DATA=true to confirm cleanup.");
       return;
     }
 
-    // Perform deletion and relationship cleanup if CLEAN_MOCK_DATA=true
+                                                                        
     let usersDeleted = 0;
     let relationshipsDeleted = 0;
 
     if (mockUserIds.length > 0) {
-      // 1. Remove mock users from followers and following lists of all other users
+                                                                                   
       const relResult = await User.updateMany(
         {
           $or: [
@@ -77,7 +77,7 @@ async function clean() {
       );
       relationshipsDeleted = relResult.modifiedCount || 0;
 
-      // Recalculate followersCount and followingCount for affected users
+                                                                         
       const affectedUsers = await User.find({
         _id: { $nin: mockUserIds },
       });
@@ -91,7 +91,7 @@ async function clean() {
         }
       }
 
-      // 2. Delete mock user records
+                                    
       const delResult = await User.deleteMany({ _id: { $in: mockUserIds } });
       usersDeleted = delResult.deletedCount || 0;
     }

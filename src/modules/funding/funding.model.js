@@ -37,7 +37,7 @@ const fundingImpactSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Compound unique index ensuring only one funding record per month/year
+                                                                        
 fundingImpactSchema.index({ year: 1, month: 1 }, { unique: true });
 
 module.exports = mongoose.model("FundingImpact", fundingImpactSchema);

@@ -2,7 +2,7 @@ const Report = require("./report.model");
 const Video = require("../video/video.model");
 const ApiError = require("../../utils/ApiError");
 
-const REPORT_THRESHOLD = 5; // auto-pause video if reports exceed this
+const REPORT_THRESHOLD = 5;                                           
 
 const createReport = async (
   reportedBy,

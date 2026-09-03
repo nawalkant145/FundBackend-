@@ -5,7 +5,7 @@ const notif = require("../modules/notification/notification.service");
 const { sendEmail } = require("../utils/sendEmail");
 const { getClient } = require("../config/redis");
 
-// Every hour — expire pitches past expiresAt
+                                             
 const expirePitches = async () => {
   try {
     const expired = await Video.find({
@@ -30,7 +30,7 @@ const expirePitches = async () => {
   }
 };
 
-// Every 5 min — flush video view counts from Redis to MongoDB
+                                                              
 const flushViewCounts = async () => {
   try {
     const redis = getClient();
@@ -49,7 +49,7 @@ const flushViewCounts = async () => {
   }
 };
 
-// Daily — notify founders 3 days before expiry
+                                               
 const expiryReminders = async () => {
   try {
     const window = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
@@ -72,12 +72,12 @@ const expiryReminders = async () => {
   }
 };
 
-// Weekly Monday digest
+                       
 const weeklyDigest = async () => {
   try {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // Investor digest — new pitches in their preferred industries
+                                                                  
     const investors = await User.find({
       role: "investor",
       isActive: true,
@@ -110,7 +110,7 @@ const weeklyDigest = async () => {
       }
     }
 
-    // Founder digest — last week's stats
+                                         
     const founders = await User.find({
       role: "founder",
       isActive: true,
@@ -141,7 +141,7 @@ const weeklyDigest = async () => {
   }
 };
 
-// Daily — clean up stale online status keys (safety net)
+                                                         
 const cleanupExpiredBoosts = async () => {
   try {
     await Video.updateMany(
@@ -154,15 +154,15 @@ const cleanupExpiredBoosts = async () => {
 };
 
 const startCronJobs = () => {
-  // Every hour
+               
   cron.schedule("0 * * * *", expirePitches);
-  // Every 5 minutes
+                    
   cron.schedule("*/5 * * * *", flushViewCounts);
-  // Daily at 9 AM
+                  
   cron.schedule("0 9 * * *", expiryReminders);
-  // Daily at 2 AM — boost cleanup
+                                  
   cron.schedule("0 2 * * *", cleanupExpiredBoosts);
-  // Monday 9 AM — weekly digest
+                                
   cron.schedule("0 9 * * 1", weeklyDigest);
   console.log("⏰ Cron jobs scheduled");
 };

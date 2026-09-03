@@ -251,18 +251,18 @@ const updateProfile = async (userId, updates) => {
     sanitized.privacyPrefs = cleanPrivacy;
   }
 
-  // If the phone number is being changed, strip formatting and reset
-  // isPhoneVerified so the new number is required to go through OTP.
+                                                                     
+                                                                     
   if (sanitized.phone !== undefined) {
-    // Normalize both sides before comparison
+                                             
     const normalizedNew = String(sanitized.phone).replace(/[\s\-()\u00A0]/g, "");
     const normalizedOld = String(currentUser.phone || "").replace(/[\s\-()\u00A0]/g, "");
     sanitized.phone = normalizedNew;
 
     if (normalizedNew !== normalizedOld) {
-      // Phone changed — require re-verification
+                                                
       sanitized.isPhoneVerified = false;
-      // Drop verificationLevel to 1 (email-only) if it was higher
+                                                                  
       if ((currentUser.verificationLevel || 0) > 1) {
         sanitized.verificationLevel = 1;
       }
@@ -446,7 +446,7 @@ const getPublicProfile = async (viewerId, userIdOrUsername) => {
     }).catch(() => {});
   }
 
-  // Track view (don't track self-views)
+                                        
   if (viewerId && viewerId.toString() !== targetId.toString()) {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
@@ -469,7 +469,7 @@ const getProfileViewers = async (userId, { limit = 20 } = {}) => {
   limit = Math.min(Number(limit) || 20, 50);
   const ownerObjId = new mongoose.Types.ObjectId(userId);
 
-  // 1. Group ProfileView by viewerId and find max viewedAt timestamp
+                                                                     
   const aggregated = await ProfileView.aggregate([
     { $match: { profileOwnerId: ownerObjId } },
     {
@@ -483,7 +483,7 @@ const getProfileViewers = async (userId, { limit = 20 } = {}) => {
 
   const allViewerIds = aggregated.map((a) => a._id);
 
-  // 2. Fetch investor users matching role "investor" (exclude banned/inactive)
+                                                                               
   const investorUsers = await User.find({
     _id: { $in: allViewerIds },
     role: "investor",
@@ -499,15 +499,15 @@ const getProfileViewers = async (userId, { limit = 20 } = {}) => {
   const userMap = new Map();
   investorUsers.forEach((u) => userMap.set(String(u._id), u));
 
-  // Filter aggregated list to valid investor accounts only
+                                                           
   const investorAggregated = aggregated.filter((item) =>
     investorSet.has(String(item._id)),
   );
 
-  // 3. Total unique investors count across the whole database
+                                                              
   const totalCount = investorAggregated.length;
 
-  // 4. Paginate viewer records for response payload
+                                                    
   const paginatedAggregated = investorAggregated.slice(0, limit);
 
   const paginatedViewers = paginatedAggregated.map((item) => ({
@@ -547,7 +547,7 @@ const deleteAccount = async (userId) => {
   });
 };
 
-// Search users + their pitches
+                               
 const search = async ({
   q,
   role,
@@ -614,7 +614,7 @@ module.exports = {
   resolveUserId,
 };
 
-// ─── Follow system ─────────────────────────────────
+                                                      
 async function followUser(currentUserId, targetUserIdOrUsername) {
   const targetUserId = await resolveUserId(targetUserIdOrUsername);
   if (!targetUserId) throw new ApiError(404, "User not found");
@@ -630,7 +630,7 @@ async function followUser(currentUserId, targetUserIdOrUsername) {
   );
 
   if (alreadyFollowing) {
-    // Unfollow
+               
     const updatedTarget = await User.findByIdAndUpdate(
       targetUserId,
       { $pull: { followers: currentUserId } },
@@ -641,7 +641,7 @@ async function followUser(currentUserId, targetUserIdOrUsername) {
       { $pull: { following: targetUserId } },
       { new: true },
     );
-    // Keep follower/following counters in sync
+                                               
     await User.findByIdAndUpdate(targetUserId, {
       followersCount: Math.max(0, updatedTarget?.followers?.length || 0),
     });
@@ -651,7 +651,7 @@ async function followUser(currentUserId, targetUserIdOrUsername) {
 
     return { following: false, isFollowing: false };
   } else {
-    // Follow
+             
     const updatedTarget = await User.findByIdAndUpdate(
       targetUserId,
       { $addToSet: { followers: currentUserId } },
@@ -662,7 +662,7 @@ async function followUser(currentUserId, targetUserIdOrUsername) {
       { $addToSet: { following: targetUserId } },
       { new: true },
     );
-    // Keep follower/following counters in sync
+                                               
     await User.findByIdAndUpdate(targetUserId, {
       followersCount: updatedTarget?.followers?.length || 0,
     });
@@ -670,7 +670,7 @@ async function followUser(currentUserId, targetUserIdOrUsername) {
       followingCount: updatedCurrent?.following?.length || 0,
     });
 
-    // Notify the target user
+                             
     try {
       const notifService = require("../notification/notification.service");
       const follower = await User.findById(currentUserId).select("name");

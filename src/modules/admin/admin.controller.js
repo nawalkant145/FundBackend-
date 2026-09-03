@@ -2,7 +2,7 @@ const asyncHandler = require("../../utils/asyncHandler");
 const ApiResponse = require("../../utils/ApiResponse");
 const adminService = require("./admin.service");
 
-// Helper: extract IP + UA from request (for audit logging)
+                                                           
 const getReqMeta = (req) => ({
   ip:
     req.ip ||
@@ -12,7 +12,7 @@ const getReqMeta = (req) => ({
   userAgent: req.headers["user-agent"] || "",
 });
 
-// Dashboard
+            
 const dashboard = asyncHandler(async (req, res) => {
   const data = await adminService.dashboard();
   res.json(new ApiResponse(200, data, "Dashboard"));
@@ -23,7 +23,7 @@ const stats = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, data, "Stats"));
 });
 
-// Users
+        
 const listUsers = asyncHandler(async (req, res) => {
   res.json(
     new ApiResponse(200, await adminService.listUsers(req.query), "Users"),
@@ -99,7 +99,7 @@ const deleteUserHard = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, null, "User permanently deleted"));
 });
 
-// Videos
+         
 const listVideos = asyncHandler(async (req, res) => {
   res.json(
     new ApiResponse(200, await adminService.listVideos(req.query), "Videos"),
@@ -154,7 +154,7 @@ const listTrash = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, data, "Trash"));
 });
 
-// KYC & Compliance Workspace (Level 1 to 5)
+                                            
 const getOperationalKpis = asyncHandler(async (req, res) => {
   const data = await adminService.getOperationalKpis();
   res.json(new ApiResponse(200, data, "Operational KPIs"));
@@ -205,7 +205,7 @@ const completeDueDiligence = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, result, "Due Diligence marked as completed"));
 });
 
-// Reports
+          
 const listReports = asyncHandler(async (req, res) => {
   res.json(
     new ApiResponse(200, await adminService.listReports(req.query), "Reports"),
@@ -220,7 +220,7 @@ const resolveReport = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, { report: r }, "Report resolved"));
 });
 
-// Comments
+           
 const listAllComments = asyncHandler(async (req, res) => {
   res.json(
     new ApiResponse(
@@ -243,7 +243,7 @@ const deleteComment = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, null, "Comment deleted"));
 });
 
-// Investments
+              
 const listInvestments = asyncHandler(async (req, res) => {
   res.json(
     new ApiResponse(
@@ -290,7 +290,7 @@ const suspiciousActivity = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, { suspicious: data }, "Suspicious activity"));
 });
 
-// Calls / Chats
+                
 const listCalls = asyncHandler(async (req, res) => {
   res.json(
     new ApiResponse(200, await adminService.listCalls(req.query), "Calls"),
@@ -311,7 +311,7 @@ const getChatMessages = asyncHandler(async (req, res) => {
   );
 });
 
-// Broadcast
+            
 const broadcast = asyncHandler(async (req, res) => {
   const result = await adminService.broadcastNotification(
     req.body,
@@ -320,7 +320,7 @@ const broadcast = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, result, "Broadcast sent"));
 });
 
-// Audit
+        
 const auditLogs = asyncHandler(async (req, res) => {
   res.json(
     new ApiResponse(200, await adminService.auditLogs(req.query), "Audit logs"),
@@ -339,7 +339,7 @@ const auditExport = asyncHandler(async (req, res) => {
   res.send(csv);
 });
 
-// Moderation queue (auto-flagged content)
+                                          
 const moderationService = require("../moderation/moderation.service");
 const listFlags = asyncHandler(async (req, res) => {
   res.json(
@@ -352,7 +352,7 @@ const resolveFlag = asyncHandler(async (req, res) => {
     req.user._id,
     req.body.action,
   );
-  // If the admin chose to remove the content, delete it
+                                                        
   if (req.body.action === "removed" && flag) {
     try {
       if (flag.contentType === "video") {
@@ -372,7 +372,7 @@ const resolveFlag = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, { flag }, "Flag resolved"));
 });
 
-// Platform settings (feature flags, limits, banned words)
+                                                          
 const settingsService = require("../settings/settings.service");
 const getSettings = asyncHandler(async (req, res) => {
   const data = await settingsService.getSettings(true);

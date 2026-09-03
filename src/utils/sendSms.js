@@ -1,4 +1,4 @@
-// Phone OTP via MSG91. Falls back to console log in dev.
+                                                         
 const axios = require("axios");
 
 const sendSms = async ({ phone, otp, message }) => {
@@ -8,7 +8,7 @@ const sendSms = async ({ phone, otp, message }) => {
     return { id: "dev-mock" };
   }
 
-  // MSG91 OTP API
+                  
   try {
     const url = "https://control.msg91.com/api/v5/otp";
     const res = await axios.post(

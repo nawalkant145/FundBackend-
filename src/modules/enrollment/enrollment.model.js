@@ -32,7 +32,7 @@ const enrollmentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Ensure a user can only be actively enrolled in a course once
+                                                               
 enrollmentSchema.index({ userId: 1, courseId: 1 }, { unique: true });
 
 module.exports = mongoose.model("Enrollment", enrollmentSchema);

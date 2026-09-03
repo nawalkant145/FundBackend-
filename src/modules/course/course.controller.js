@@ -130,7 +130,7 @@ const sendCourseReceipt = asyncHandler(async (req, res) => {
   );
 });
 
-// Create Course (Admin only)
+                             
 const createCourse = asyncHandler(async (req, res) => {
   const course = await courseService.createCourse(
     req.user._id,
@@ -140,13 +140,13 @@ const createCourse = asyncHandler(async (req, res) => {
   res.status(201).json(new ApiResponse(201, { course }, "Course created successfully"));
 });
 
-// Get Admin managed courses
+                            
 const getAdminCourses = asyncHandler(async (req, res) => {
   const result = await courseService.getAdminCourses(req.query);
   res.status(200).json(new ApiResponse(200, result, "Admin courses retrieved"));
 });
 
-// Update Course (Admin only)
+                             
 const updateCourse = asyncHandler(async (req, res) => {
   const course = await courseService.updateCourse(
     req.params.id,
@@ -157,13 +157,13 @@ const updateCourse = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, { course }, "Course updated successfully"));
 });
 
-// Delete Course (Admin only)
+                             
 const deleteCourse = asyncHandler(async (req, res) => {
   const result = await courseService.deleteCourse(req.params.id, req.user._id);
   res.status(200).json(new ApiResponse(200, result, "Course deleted successfully"));
 });
 
-// Add Lesson to Course (Admin only)
+                                    
 const addLesson = asyncHandler(async (req, res) => {
   const course = await courseService.addLesson(
     req.params.id,
@@ -174,7 +174,7 @@ const addLesson = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, { course }, "Lesson added successfully"));
 });
 
-// Update Lesson in Course (Admin only)
+                                       
 const updateLesson = asyncHandler(async (req, res) => {
   const course = await courseService.updateLesson(
     req.params.id,
@@ -186,7 +186,7 @@ const updateLesson = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, { course }, "Lesson updated successfully"));
 });
 
-// Delete Lesson from Course (Admin only)
+                                         
 const deleteLesson = asyncHandler(async (req, res) => {
   const course = await courseService.deleteLesson(
     req.params.id,
@@ -196,13 +196,13 @@ const deleteLesson = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, { course }, "Lesson deleted successfully"));
 });
 
-// Get Published Courses (Public / All Users)
+                                             
 const getPublishedCourses = asyncHandler(async (req, res) => {
   const result = await courseService.getPublishedCourses(req.query);
   res.status(200).json(new ApiResponse(200, result, "Published courses retrieved"));
 });
 
-// Get Course Details by ID
+                           
 const getCourseById = asyncHandler(async (req, res) => {
   const course = await courseService.getCourseById(req.params.id, req.user);
   res.status(200).json(new ApiResponse(200, { course }, "Course details fetched"));

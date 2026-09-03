@@ -53,7 +53,7 @@ const initiateCall = async (callerId, { receiverId, callType, type, chatId }) =>
     );
   }
 
-  // Find existing chat document if available
+                                             
   let chat = null;
   if (chatId) {
     chat = await Chat.findById(chatId);
@@ -69,7 +69,7 @@ const initiateCall = async (callerId, { receiverId, callType, type, chatId }) =>
     });
   }
 
-  // Auto-cleanup stale calls older than 60s or previous calls between the same 2 users
+                                                                                       
   const staleCutoff = new Date(Date.now() - 60 * 1000);
   await Call.updateMany(
     {
@@ -84,7 +84,7 @@ const initiateCall = async (callerId, { receiverId, callType, type, chatId }) =>
     { $set: { status: "ended", endedAt: new Date() } }
   );
 
-  // Auto-close any prior call specifically between callerId and receiverId
+                                                                           
   await Call.updateMany(
     {
       $or: [
@@ -304,7 +304,7 @@ const history = async (userId, { filter = "all", query = "", limit = 30, cursor 
   const hasMore = rawCalls.length > limit;
   let items = hasMore ? rawCalls.slice(0, limit) : rawCalls;
 
-  // Compute direction dynamically & format object
+                                                  
   items = items.map((c) => {
     const callerIdStr = c.callerId?._id ? c.callerId._id.toString() : c.callerId?.toString();
     const isCaller = callerIdStr === userId.toString();
@@ -328,7 +328,7 @@ const history = async (userId, { filter = "all", query = "", limit = 30, cursor 
     };
   });
 
-  // Client-side text query search filtering on populated caller/receiver name
+                                                                              
   if (query && typeof query === "string" && query.trim().length > 0) {
     const lowerQ = query.toLowerCase().trim();
     items = items.filter(

@@ -4,7 +4,7 @@ const c = require("./enrollment.controller");
 const { authenticate } = require("../../middlewares/auth.middleware");
 const { authorize } = require("../../middlewares/role.middleware");
 
-// Restrict course enrollment, purchases, and learning progress to Founder and Investor roles
+                                                                                             
 router.post(
   "/purchase",
   authenticate,

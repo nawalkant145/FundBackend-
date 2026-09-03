@@ -9,7 +9,7 @@ const isInitialized = initialize();
 console.log("AWS Storage Initialized:", isInitialized);
 
 async function testUpload() {
-  // Create a temporary sample identity image file
+                                                  
   const tempDir = path.join(process.cwd(), "tmp", "uploads");
   fs.mkdirSync(tempDir, { recursive: true });
   const sampleFilePath = path.join(tempDir, `test-identity-${Date.now()}.png`);

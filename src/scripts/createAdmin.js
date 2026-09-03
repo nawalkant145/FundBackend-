@@ -1,16 +1,4 @@
-/**
- * One-time admin bootstrap script.
- *
- * Usage:
- *   node src/scripts/createAdmin.js
- *
- * Reads credentials from env vars if set, otherwise uses sensible defaults.
- * Creates a new admin OR promotes/updates an existing user with that email.
- * The password is hashed automatically by the User model's pre-save hook.
- *
- * Env overrides (optional):
- *   ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_NAME, ADMIN_USERNAME
- */
+                                                                                                                                                                                                                                                                                                                                                                                                                                              
 require("dotenv").config();
 const mongoose = require("mongoose");
 const User = require("../modules/user/user.model");
@@ -37,9 +25,9 @@ const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || "expgloadmin")
     let user = await User.findOne({ email: ADMIN_EMAIL });
 
     if (user) {
-      // Promote / reset existing user to admin
+                                               
       user.role = "admin";
-      user.password = ADMIN_PASSWORD; // re-hashed by pre-save hook
+      user.password = ADMIN_PASSWORD;                              
       user.isEmailVerified = true;
       user.isPhoneVerified = true;
       user.isVerified = true;
@@ -50,7 +38,7 @@ const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || "expgloadmin")
       await user.save();
       console.log(`✅ Existing user promoted to admin: ${ADMIN_EMAIL}`);
     } else {
-      // Ensure username is unique
+                                  
       let username = ADMIN_USERNAME;
       if (await User.findOne({ username })) {
         username = `${ADMIN_USERNAME}_${Date.now().toString().slice(-4)}`;
@@ -60,7 +48,7 @@ const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || "expgloadmin")
         name: ADMIN_NAME,
         username,
         email: ADMIN_EMAIL,
-        password: ADMIN_PASSWORD, // hashed by pre-save hook
+        password: ADMIN_PASSWORD,                           
         role: "admin",
         isEmailVerified: true,
         isPhoneVerified: true,

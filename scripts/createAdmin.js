@@ -1,6 +1,6 @@
-// Create the initial admin user.
-// Usage:
-//   node scripts/createAdmin.js admin@example.com SecurePass123 "Admin Name"
+                                 
+         
+                                                                             
 require("dotenv").config();
 const path = require("path");
 process.chdir(path.join(__dirname, ".."));

@@ -9,30 +9,26 @@ const enrollmentService = require("../enrollment/enrollment.service");
 const razorpayService = require("./razorpay.service");
 const ApiError = require("../../utils/ApiError");
 
-/**
- * Safely unset null values on sparse indexed fields for legacy payment documents
- */
+                                                                                           
 const sanitizeNullSparseFields = async () => {
   try {
     await Payment.updateMany({ razorpayPaymentId: null }, { $unset: { razorpayPaymentId: "" } });
     await Payment.updateMany({ claimToken: null }, { $unset: { claimToken: "" } });
   } catch (err) {
-    // Non-blocking warning for legacy cleanup
+                                              
     console.warn("[Payment DB Migration Warning] Could not sanitize null sparse fields:", err.message);
   }
 };
-// Run once asynchronously on module load
+                                         
 sanitizeNullSparseFields();
 
-/**
- * Create a server-authorized Razorpay Order for an authenticated Founder/Investor
- */
+                                                                                            
 const createCourseOrder = async (user, courseId) => {
   if (!user || !user._id) {
     throw new ApiError(401, "Authentication required");
   }
 
-  // Ensure Admin cannot purchase courses
+                                         
   if (user.role === "admin") {
     throw new ApiError(403, "Admins cannot purchase courses. Admin role has direct management access.");
   }
@@ -54,20 +50,20 @@ const createCourseOrder = async (user, courseId) => {
     throw new ApiError(400, `This course is not available for purchase yet (status: ${course.status}).`);
   }
 
-  // Check if user is already enrolled
+                                      
   const existingEnrollment = await Enrollment.findOne({ userId: user._id, courseId, status: "active" });
   if (existingEnrollment) {
     throw new ApiError(400, "You are already enrolled in this course.");
   }
 
-  // Price coming strictly from backend MongoDB Course model
+                                                            
   const rawPrice = Number(course.price);
   if (isNaN(rawPrice) || rawPrice < 0) {
     throw new ApiError(400, "Invalid course price configuration.");
   }
   const amountInPaise = Math.round(rawPrice * 100);
 
-  // Free course handling
+                         
   if (amountInPaise <= 0) {
     const enrollment = await enrollmentService.purchaseAndEnroll(user, courseId, {
       transactionId: `FREE_${Date.now()}`,
@@ -81,7 +77,7 @@ const createCourseOrder = async (user, courseId) => {
     throw new ApiError(400, "Payment amount must be at least ₹1 (100 paise).");
   }
 
-  // Check if an active unfulfilled pending order exists for this user and course created within 15 mins
+                                                                                                        
   const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
   const pendingOrder = await Payment.findOne({
     userId: user._id,
@@ -104,7 +100,7 @@ const createCourseOrder = async (user, courseId) => {
     };
   }
 
-  // Generate safe Razorpay receipt (max 40 chars, using safe alphanumerics <= 25 chars)
+                                                                                        
   const receipt = `rcpt_${courseId.toString().slice(-6)}_${Date.now().toString(36)}`;
 
   const order = await razorpayService.createOrder(amountInPaise, "INR", receipt, {
@@ -112,7 +108,7 @@ const createCourseOrder = async (user, courseId) => {
     userId: user._id.toString(),
   });
 
-  // Construct document without null defaults for sparse fields
+                                                               
   const paymentRecord = await Payment.create({
     userId: user._id,
     courseId,
@@ -136,9 +132,7 @@ const createCourseOrder = async (user, courseId) => {
   };
 };
 
-/**
- * Create a server-authorized Razorpay Order for an unauthenticated Guest
- */
+                                                                                   
 const guestCreateCourseOrder = async (courseId) => {
   if (!courseId || !mongoose.Types.ObjectId.isValid(courseId)) {
     throw new ApiError(400, "Invalid course ID format.");
@@ -171,7 +165,7 @@ const guestCreateCourseOrder = async (courseId) => {
     throw new ApiError(400, "Payment amount must be at least ₹1 (100 paise).");
   }
 
-  // Check for recent unfulfilled guest order for the same course created within 15 mins
+                                                                                        
   const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
   const pendingGuestOrder = await Payment.findOne({
     userId: null,
@@ -224,16 +218,14 @@ const guestCreateCourseOrder = async (courseId) => {
   };
 };
 
-/**
- * Idempotent fulfillment helper to convert confirmed Razorpay payment into Course Enrollment
- */
+                                                                                                       
 const fulfillSuccessfulPayment = async (razorpayOrderId, razorpayPaymentId, paymentMethod = "Razorpay Checkout") => {
   const payment = await Payment.findOne({ razorpayOrderId });
   if (!payment) {
     throw new ApiError(404, "Payment record not found for order");
   }
 
-  // Idempotency: if already fulfilled, return existing enrollment or status
+                                                                            
   if (payment.status === "captured" || payment.status === "claimed") {
     if (payment.enrollmentId) {
       const enrollment = await Enrollment.findById(payment.enrollmentId);
@@ -242,7 +234,7 @@ const fulfillSuccessfulPayment = async (razorpayOrderId, razorpayPaymentId, paym
     return { payment, claimToken: payment.claimToken };
   }
 
-  // Atomic state change to captured
+                                    
   const updatedPayment = await Payment.findOneAndUpdate(
     { _id: payment._id, status: { $ne: "captured" } },
     {
@@ -256,7 +248,7 @@ const fulfillSuccessfulPayment = async (razorpayOrderId, razorpayPaymentId, paym
   );
 
   if (!updatedPayment) {
-    // Concurrent execution completed it
+                                        
     const reFetched = await Payment.findById(payment._id);
     if (reFetched.enrollmentId) {
       const enrollment = await Enrollment.findById(reFetched.enrollmentId);
@@ -265,7 +257,7 @@ const fulfillSuccessfulPayment = async (razorpayOrderId, razorpayPaymentId, paym
     return { payment: reFetched, claimToken: reFetched.claimToken };
   }
 
-  // Handle Authenticated User vs Guest User
+                                            
   if (updatedPayment.userId) {
     const user = await User.findById(updatedPayment.userId);
     if (!user) {
@@ -284,7 +276,7 @@ const fulfillSuccessfulPayment = async (razorpayOrderId, razorpayPaymentId, paym
 
     return { payment: updatedPayment, enrollment };
   } else {
-    // Guest purchase: Generate claimToken for account signup/login linkage
+                                                                           
     const claimToken = `CLAIM_${uuidv4()}`;
     updatedPayment.claimToken = claimToken;
     await updatedPayment.save();
@@ -293,9 +285,7 @@ const fulfillSuccessfulPayment = async (razorpayOrderId, razorpayPaymentId, paym
   }
 };
 
-/**
- * Verify Razorpay Checkout response parameters and fulfill purchase
- */
+                                                                              
 const verifyAndFulfill = async (user, { courseId, razorpay_order_id, razorpay_payment_id, razorpay_signature }) => {
   if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
     throw new ApiError(400, "Missing required Razorpay payment response parameters");
@@ -314,7 +304,7 @@ const verifyAndFulfill = async (user, { courseId, razorpay_order_id, razorpay_pa
     throw new ApiError(403, "Payment order does not belong to the authenticated user");
   }
 
-  // Verify HMAC SHA256 Signature using server stored order ID
+                                                              
   const isSignatureValid = razorpayService.verifySignature(
     payment.razorpayOrderId,
     razorpay_payment_id,
@@ -327,7 +317,7 @@ const verifyAndFulfill = async (user, { courseId, razorpay_order_id, razorpay_pa
     throw new ApiError(400, "Payment verification failed. Invalid Razorpay signature.");
   }
 
-  // Fetch payment status from Razorpay REST API for double confirmation
+                                                                        
   try {
     const rzpPayment = await razorpayService.fetchPayment(razorpay_payment_id);
     if (!rzpPayment || (rzpPayment.status !== "captured" && rzpPayment.status !== "authorized")) {
@@ -344,17 +334,15 @@ const verifyAndFulfill = async (user, { courseId, razorpay_order_id, razorpay_pa
     console.warn("Razorpay API fetch warning during verification:", err.message);
   }
 
-  // Save signature
+                   
   payment.razorpaySignature = razorpay_signature;
   await payment.save();
 
-  // Fulfill enrollment idempotently
+                                    
   return fulfillSuccessfulPayment(payment.razorpayOrderId, razorpay_payment_id);
 };
 
-/**
- * Process server-to-server Razorpay webhooks idempotently
- */
+                                                                    
 const handleWebhook = async (rawBody, signatureHeader) => {
   const isSigValid = razorpayService.verifyWebhookSignature(rawBody, signatureHeader);
   if (!isSigValid) {
@@ -369,7 +357,7 @@ const handleWebhook = async (rawBody, signatureHeader) => {
     return { ok: true, message: "No event ID provided" };
   }
 
-  // Idempotency Check: Ignore if webhook event was already processed
+                                                                     
   const existingEvent = await PaymentWebhookEvent.findOne({ eventId });
   if (existingEvent) {
     return { ok: true, duplicate: true, message: "Webhook event already processed" };
@@ -401,9 +389,7 @@ const handleWebhook = async (rawBody, signatureHeader) => {
   return { ok: true, eventType };
 };
 
-/**
- * Claim a verified guest purchase after user registration or login
- */
+                                                                             
 const claimPurchase = async (user, claimToken) => {
   if (!user || !user._id) {
     throw new ApiError(401, "Authentication required to claim purchase");
@@ -430,7 +416,7 @@ const claimPurchase = async (user, claimToken) => {
     throw new ApiError(400, "Purchase payment was not captured or verified");
   }
 
-  // Create enrollment for the newly authenticated user
+                                                       
   const enrollment = await enrollmentService.purchaseAndEnroll(user, payment.courseId, {
     transactionId: payment.razorpayPaymentId || payment.razorpayOrderId,
     paymentId: payment.razorpayPaymentId || payment.razorpayOrderId,

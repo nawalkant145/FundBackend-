@@ -59,7 +59,7 @@ const uploadVideoToCloudinary = async (filePath) => {
     const result = await cloudinary.uploader.upload_large(filePath, {
       resource_type: "video",
       folder: "pitches",
-      chunk_size: 6000000, // 6MB chunked streaming for maximum upload throughput
+      chunk_size: 6000000,                                                       
       eager: [{ streaming_profile: "hd", format: "m3u8" }],
       eager_async: true,
     });

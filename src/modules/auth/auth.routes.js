@@ -21,7 +21,7 @@ router.post("/refresh-token", c.refresh);
 router.post("/forgot-password", authLimiter, c.forgotPassword);
 router.post("/reset-password", authLimiter, c.resetPassword);
 
-// Pre-register email verification (no auth needed)
+                                                   
 router.post("/send-pre-register-otp", otpLimiter, c.sendPreRegisterOtp);
 router.post(
   "/verify-pre-register-otp",

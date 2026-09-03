@@ -5,7 +5,7 @@ const Investment = require("../investment/investment.model");
 const Call = require("../call/call.model");
 const { Chat } = require("../chat/chat.model");
 
-// Aggregate dashboard for founder
+                                  
 const founderActivity = async (founderId) => {
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const [

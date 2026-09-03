@@ -31,7 +31,7 @@ const commentSchema = new mongoose.Schema(
     replyCount: { type: Number, default: 0 },
     isEdited: { type: Boolean, default: false },
     isDeleted: { type: Boolean, default: false },
-    isHidden: { type: Boolean, default: false }, // admin hidden
+    isHidden: { type: Boolean, default: false },                
     reportCount: { type: Number, default: 0 },
   },
   { timestamps: true },

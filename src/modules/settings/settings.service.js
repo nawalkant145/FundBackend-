@@ -1,9 +1,9 @@
 const Settings = require("./settings.model");
 
-// In-memory cache so we don't hit the DB on every request
+                                                          
 let cached = null;
 let cachedAt = 0;
-const TTL = 30 * 1000; // 30s
+const TTL = 30 * 1000;       
 
 const ALLOWED_FIELDS = [
   "signupsEnabled",
@@ -19,7 +19,7 @@ const ALLOWED_FIELDS = [
   "customBannedWords",
 ];
 
-// Get the global settings doc, creating it if missing. Cached for 30s.
+                                                                       
 const getSettings = async (force = false) => {
   if (!force && cached && Date.now() - cachedAt < TTL) return cached;
   let doc = await Settings.findOne({ key: "global" });
@@ -29,7 +29,7 @@ const getSettings = async (force = false) => {
   return cached;
 };
 
-// Synchronous best-effort getter (returns last cache or null)
+                                                              
 const getCached = () => cached;
 
 const updateSettings = async (updates, adminId) => {

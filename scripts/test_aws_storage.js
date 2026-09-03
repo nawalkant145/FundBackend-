@@ -9,15 +9,15 @@ const {
 
 console.log("=== Testing Pure AWS S3 Storage Module ===");
 
-// 1. Initialize AWS Storage
+                            
 const initialized = initialize();
 console.log("Initialization result:", initialized);
 
-// 2. Check Storage Status
+                          
 const status = getStorageStatus();
 console.log("Storage Status:", JSON.stringify(status, null, 2));
 
-// 3. Test Helper Functions & Presigned URL if configured
+                                                         
 console.log("isCloudStorageEnabled():", isCloudStorageEnabled());
 
 const sampleUrl = "https://expglofund.s3.ap-south-2.amazonaws.com/uploads/test.jpg";

@@ -1,10 +1,7 @@
 const ModerationFlag = require("./moderation.model");
 const { findProfanity } = require("../../utils/profanityFilter");
 
-/**
- * Inspect a piece of user content. If it contains profanity, raise a
- * moderation flag for admin review. Safe to call fire-and-forget.
- */
+                                                                                                                                                   
 const flagIfNeeded = async ({
   contentType,
   contentId,
@@ -57,7 +54,7 @@ const countPending = async () =>
   ModerationFlag.countDocuments({ status: "pending" });
 
 const resolveFlag = async (flagId, adminId, action) => {
-  // action: "approved" | "removed" | "dismissed"
+                                                 
   const flag = await ModerationFlag.findByIdAndUpdate(
     flagId,
     { status: action, reviewedBy: adminId, reviewedAt: new Date() },

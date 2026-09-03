@@ -17,7 +17,7 @@ module.exports = (io, socket) => {
         },
       );
 
-      // Push incoming call event to receiver
+                                             
       const payload = {
         callId: call._id,
         callerId: socket.userId,
@@ -31,7 +31,7 @@ module.exports = (io, socket) => {
 
       io.to(receiverId.toString()).emit("incoming_call", payload);
 
-      // Out-of-app notification
+                                
       notif
         .send(receiverId, {
           type: "call",
@@ -42,7 +42,7 @@ module.exports = (io, socket) => {
         })
         .catch(() => {});
 
-      // Auto-miss timer
+                        
       setTimeout(async () => {
         try {
           const updated = await callService.markMissed(call._id);
@@ -139,7 +139,7 @@ module.exports = (io, socket) => {
   socket.on("end_call", handleEndCall);
   socket.on("call_end", handleEndCall);
 
-  // ─── WebRTC Signaling ───────────────────────
+                                                 
   const handleOffer = ({ targetId, offer }) => {
     if (targetId) {
       io.to(targetId.toString()).emit("offer", { from: socket.userId, offer });

@@ -1,5 +1,5 @@
-// Firebase Admin SDK for FCM push notifications.
-// Returns null if env not set so the app still runs without FCM in dev.
+                                                 
+                                                                        
 
 let admin = null;
 let initialized = false;

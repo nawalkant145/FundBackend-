@@ -7,7 +7,7 @@ const Post = require("../post/post.model");
 
 const create = asyncHandler(async (req, res) => {
   const comment = await commentService.create(req.user._id, req.body);
-  // Notify the content owner / parent comment author of new comment / reply
+                                                                            
   try {
     if (req.body.parentId) {
       const Comment = require("./comment.model");

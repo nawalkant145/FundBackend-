@@ -8,7 +8,7 @@ const { cleanText } = require("../../utils/profanityFilter");
 const settingsService = require("../settings/settings.service");
 const { toObjectId, enrichComment, enrichComments } = require("../../utils/engagement");
 
-// Invalidate all feed caches so updated comment counts show on refresh
+                                                                       
 const invalidateFeedCache = async () => {
   try {
     const redis = getClient();
@@ -17,7 +17,7 @@ const invalidateFeedCache = async () => {
   } catch {}
 };
 
-// Sync exact active comment count to target (Video/Post/Comment)
+                                                                 
 const syncTargetCommentCount = async ({ videoId, postId, parentId }) => {
   let replyCount = 0;
   let commentCount = 0;
@@ -64,7 +64,7 @@ const create = async (userId, { videoId, postId, text, parentId }) => {
     throw new ApiError(400, "Invalid post ID");
   }
 
-  // Resolve the target (video OR post)
+                                       
   if (videoId) {
     const video = await Video.findById(videoId);
     if (!video) throw new ApiError(404, "Video not found");
@@ -104,7 +104,7 @@ const create = async (userId, { videoId, postId, text, parentId }) => {
     parentId,
   });
 
-  // Auto-flag for admin review if the original text had profanity
+                                                                  
   try {
     const moderation = require("../moderation/moderation.service");
     moderation
@@ -124,7 +124,7 @@ const create = async (userId, { videoId, postId, text, parentId }) => {
   );
   const enrichedComment = enrichComment(populated.toObject(), userId);
 
-  // Broadcast new comment to all clients watching this video/post
+                                                                  
   try {
     const { getIO } = require("../../socket");
     const io = getIO();
@@ -168,7 +168,7 @@ const list = async (
     return { comments: [], nextCursor: null, hasMore: false };
   }
 
-  // Normalize parentId (handle string "null", "undefined", etc.)
+                                                                 
   let normalizedParentId = null;
   if (
     parentId &&
@@ -226,7 +226,7 @@ const update = async (commentId, userId, text) => {
   );
   const enrichedComment = enrichComment(populated.toObject(), userId);
 
-  // Broadcast edit to all clients watching this video/post
+                                                           
   try {
     const { getIO } = require("../../socket");
     const io = getIO();
@@ -287,12 +287,12 @@ const remove = async (commentId, userId) => {
     throw new ApiError(403, "Not authorized to delete this comment");
   }
 
-  // Soft delete target comment
+                               
   comment.isDeleted = true;
   comment.text = "[deleted]";
   await comment.save();
 
-  // If top-level comment, soft-delete child replies
+                                                    
   if (!parentId) {
     await Comment.updateMany(
       { parentId: comment._id },
@@ -306,7 +306,7 @@ const remove = async (commentId, userId) => {
     parentId,
   });
 
-  // Broadcast deletion to all clients watching this video/post
+                                                               
   try {
     const { getIO } = require("../../socket");
     const io = getIO();
@@ -368,7 +368,7 @@ const like = async (commentId, userId) => {
     count: total,
   };
 
-  // Broadcast comment like update to all connected clients
+                                                           
   try {
     const { getIO } = require("../../socket");
     const io = getIO();
@@ -380,7 +380,7 @@ const like = async (commentId, userId) => {
   return result;
 };
 
-// Admin
+        
 const adminHide = async (commentId) => {
   const c = await Comment.findByIdAndUpdate(
     commentId,

@@ -24,12 +24,12 @@ const dealRoomSchema = new mongoose.Schema(
       ref: "Video",
     },
     
-    // Core Deal Terms
-    fundingAmount: { type: Number, default: 0 }, // INR
-    proposedValuation: { type: Number, default: 0 }, // INR
-    equityPercentage: { type: Number, default: 0 }, // %
+                      
+    fundingAmount: { type: Number, default: 0 },       
+    proposedValuation: { type: Number, default: 0 },       
+    equityPercentage: { type: Number, default: 0 },     
 
-    // Deal Workflow Lifecycle Stage
+                                    
     stage: {
       type: String,
       enum: [
@@ -45,7 +45,7 @@ const dealRoomSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Deal Room Document Vault Repository
+                                          
     documents: [
       {
         category: {
@@ -66,7 +66,7 @@ const dealRoomSchema = new mongoose.Schema(
       },
     ],
 
-    // Due Diligence Checklist Items
+                                    
     checklist: [
       {
         key: { type: String, required: true },
@@ -86,7 +86,7 @@ const dealRoomSchema = new mongoose.Schema(
       },
     ],
 
-    // Professional Compliance Review Status
+                                            
     reviewStatus: {
       caCsStatus: {
         type: String,
@@ -106,14 +106,14 @@ const dealRoomSchema = new mongoose.Schema(
       lawyerReviewedAt: { type: Date },
     },
 
-    // E-Sign Execution Status
+                              
     eSignStatus: {
       type: String,
       enum: ["draft", "sent", "partially_signed", "fully_signed"],
       default: "draft",
     },
 
-    // Request Initiator & Target
+                                 
     requestedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -125,7 +125,7 @@ const dealRoomSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Overall Deal Status
+                          
     status: {
       type: String,
       enum: ["pending_acceptance", "active", "declined", "on_hold", "closed_successfully", "cancelled"],

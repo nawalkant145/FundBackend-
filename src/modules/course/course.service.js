@@ -17,9 +17,7 @@ const slugify = (text) =>
     .replace(/[^\w\-]+/g, "")
     .replace(/\-\-+/g, "-");
 
-/**
- * Create a new course (Admin only)
- */
+                                             
 const createCourse = async (adminId, courseData, files = {}) => {
   const { title, description, category, level, price, tags, status } = courseData;
 
@@ -76,9 +74,7 @@ const createCourse = async (adminId, courseData, files = {}) => {
   return course;
 };
 
-/**
- * Get all courses for Admin management
- */
+                                                 
 const getAdminCourses = async (query = {}) => {
   const { status, limit = 50, page = 1 } = query;
   const filter = { status: { $ne: "deleted" } };
@@ -109,9 +105,7 @@ const getAdminCourses = async (query = {}) => {
   };
 };
 
-/**
- * Update course details (Admin only)
- */
+                                               
 const updateCourse = async (courseId, adminId, updateData, files = {}) => {
   const course = await Course.findOne({ _id: courseId, status: { $ne: "deleted" } });
   if (!course) {
@@ -172,16 +166,14 @@ const updateCourse = async (courseId, adminId, updateData, files = {}) => {
   return course;
 };
 
-/**
- * Delete course (Admin only)
- */
+                                       
 const deleteCourse = async (courseId, adminId) => {
   const course = await Course.findOne({ _id: courseId, status: { $ne: "deleted" } });
   if (!course) {
     throw new ApiError(404, "Course not found");
   }
 
-  // Clean up main Cloudinary media
+                                   
   if (course.thumbnailPublicId) {
     await deleteFromCloudinary(course.thumbnailPublicId, "image");
   }
@@ -189,7 +181,7 @@ const deleteCourse = async (courseId, adminId) => {
     await deleteFromCloudinary(course.previewVideoPublicId, "video");
   }
 
-  // Clean up lesson Cloudinary media
+                                     
   for (const mod of course.modules) {
     for (const lesson of mod.lessons) {
       if (lesson.cloudinaryPublicId) {
@@ -208,9 +200,7 @@ const deleteCourse = async (courseId, adminId) => {
   return { message: "Course deleted successfully" };
 };
 
-/**
- * Add a lesson / video to a course module (Admin only)
- */
+                                                                 
 const addLesson = async (courseId, adminId, lessonData, files = {}) => {
   const course = await Course.findOne({ _id: courseId, status: { $ne: "deleted" } });
   if (!course) {
@@ -305,9 +295,7 @@ const addLesson = async (courseId, adminId, lessonData, files = {}) => {
   return course;
 };
 
-/**
- * Update an existing lesson (Admin only)
- */
+                                                   
 const updateLesson = async (
   courseId,
   adminId,
@@ -382,9 +370,7 @@ const updateLesson = async (
   return course;
 };
 
-/**
- * Delete a lesson from a course (Admin only)
- */
+                                                       
 const deleteLesson = async (courseId, adminId, lessonId) => {
   const course = await Course.findOne({ _id: courseId, status: { $ne: "deleted" } });
   if (!course) {
@@ -418,9 +404,7 @@ const deleteLesson = async (courseId, adminId, lessonId) => {
   return course;
 };
 
-/**
- * Public/Student: Get all published courses
- */
+                                                      
 const getPublishedCourses = async (query = {}) => {
   const { category, level, search, limit = 20, page = 1 } = query;
   const filter = { status: "published" };
@@ -459,9 +443,7 @@ const getPublishedCourses = async (query = {}) => {
   };
 };
 
-/**
- * Get course details by ID with enrollment & role-based content protection
- */
+                                                                                     
 const getCourseById = async (courseId, user = null) => {
   const course = await Course.findOne({
     _id: courseId,
@@ -474,12 +456,12 @@ const getCourseById = async (courseId, user = null) => {
 
   const isAdmin = user && user.role === "admin";
 
-  // Draft mode restriction: only Admin can view unpublished courses
+                                                                    
   if (course.status !== "published" && !isAdmin) {
     throw new ApiError(403, "This course is not published yet");
   }
 
-  // Check enrollment for Founder / Investor
+                                            
   let isEnrolled = false;
   if (user && (user.role === "founder" || user.role === "investor")) {
     const enrollment = await Enrollment.findOne({
@@ -494,13 +476,13 @@ const getCourseById = async (courseId, user = null) => {
 
   const courseObj = course.toObject();
 
-  // If Admin OR Free Course OR Enrolled -> Return complete content
+                                                                   
   if (isAdmin || course.price === 0 || isEnrolled) {
     courseObj.isEnrolled = true;
     return courseObj;
   }
 
-  // Non-enrolled user: Sanitize non-preview lesson video/document URLs
+                                                                       
   courseObj.isEnrolled = false;
   if (courseObj.modules && Array.isArray(courseObj.modules)) {
     courseObj.modules = courseObj.modules.map((mod) => {

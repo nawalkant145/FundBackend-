@@ -7,7 +7,7 @@ const auditService = require("../modules/audit/audit.service");
 class KycEventEmitter extends EventEmitter {}
 const kycEvents = new KycEventEmitter();
 
-// Level 2 Personal Identity Submitted
+                                      
 kycEvents.on("kyc:submitted", async ({ userId, kycId, referenceId }) => {
   try {
     await notificationService.send(userId, {
@@ -21,7 +21,7 @@ kycEvents.on("kyc:submitted", async ({ userId, kycId, referenceId }) => {
   }
 });
 
-// Level 2 Personal Identity Resubmitted
+                                        
 kycEvents.on("kyc:resubmitted", async ({ userId, kycId, referenceId }) => {
   try {
     await notificationService.send(userId, {
@@ -35,7 +35,7 @@ kycEvents.on("kyc:resubmitted", async ({ userId, kycId, referenceId }) => {
   }
 });
 
-// Level 2 Personal Identity Approved
+                                     
 kycEvents.on("kyc:approved", async ({ userId, adminId }) => {
   try {
     const user = await User.findById(userId);
@@ -71,7 +71,7 @@ kycEvents.on("kyc:approved", async ({ userId, adminId }) => {
   }
 });
 
-// Level 2 Personal Identity Rejected
+                                     
 kycEvents.on("kyc:rejected", async ({ userId, reason, adminId }) => {
   try {
     const user = await User.findById(userId);
@@ -108,7 +108,7 @@ kycEvents.on("kyc:rejected", async ({ userId, reason, adminId }) => {
   }
 });
 
-// Level 3 Founder Verification Approved
+                                        
 kycEvents.on("company:approved", async ({ userId, companyId, adminId }) => {
   try {
     const user = await User.findById(userId);
@@ -143,7 +143,7 @@ kycEvents.on("company:approved", async ({ userId, companyId, adminId }) => {
   }
 });
 
-// Level 4 Investor Transaction KYC Approved
+                                            
 kycEvents.on("investmentKyc:approved", async ({ userId, adminId }) => {
   try {
     const user = await User.findById(userId);

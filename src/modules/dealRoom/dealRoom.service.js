@@ -13,7 +13,7 @@ const DEFAULT_CHECKLIST_ITEMS = [
 ];
 
 const createDealRoom = async (user, payload) => {
-  // Backend Security Rule: Always evaluate actual DB user record, never trust client parameters
+                                                                                                
   const dbUser = await User.findById(user._id);
   if (
     !dbUser ||
@@ -67,17 +67,17 @@ const createDealRoom = async (user, payload) => {
   const targetUser = user._id.toString() === founder._id.toString() ? investor : founder;
   const targetRole = targetUser.role;
 
-  // Exact Role-Based Permission Matrix:
-  // Investor -> Founder  => "active"
-  // Founder -> Founder   => "active"
-  // Founder -> Investor  => "pending_acceptance"
-  // Admin                => "active"
+                                        
+                                     
+                                     
+                                                 
+                                     
   let initialStatus = "active";
   if (initiatorRole === "founder" && targetRole === "investor") {
     initialStatus = "pending_acceptance";
   }
 
-  // DUPLICATE DEAL ROOM PROTECTION
+                                   
   let existingRoom = await DealRoom.findOne({
     $or: [
       { founderId, investorId },
@@ -96,7 +96,7 @@ const createDealRoom = async (user, payload) => {
     return existingRoom;
   }
 
-  // Create Deal Room document (client-supplied status override is ignored)
+                                                                           
   const dealRoom = await DealRoom.create({
     chatId: payload.chatId || null,
     founderId,
@@ -113,7 +113,7 @@ const createDealRoom = async (user, payload) => {
     status: initialStatus,
   });
 
-  // Post notifications & chat system messages
+                                              
   if (initialStatus === "pending_acceptance") {
     try {
       await notificationService.send(targetUser._id, {
@@ -184,7 +184,7 @@ const createDealRoom = async (user, payload) => {
 };
 
 const acceptDealRoomRequest = async (dealRoomId, user) => {
-  // Backend Security Rule: Always evaluate actual DB user record, never trust client parameters
+                                                                                                
   const dbUser = await User.findById(user._id);
   if (
     !dbUser ||
@@ -207,7 +207,7 @@ const acceptDealRoomRequest = async (dealRoomId, user) => {
     throw new ApiError(400, "Deal Room request is not pending acceptance.");
   }
 
-  // Authorization check: only target investor (requestedTo) can accept
+                                                                       
   if (!dealRoom.requestedTo || dealRoom.requestedTo.toString() !== user._id.toString()) {
     throw new ApiError(403, "Only the target investor can accept this Deal Room request.");
   }
@@ -260,7 +260,7 @@ const declineDealRoomRequest = async (dealRoomId, user) => {
     throw new ApiError(400, "Deal Room request is not pending acceptance.");
   }
 
-  // Authorization check: only target investor (requestedTo) can decline
+                                                                        
   if (!dealRoom.requestedTo || dealRoom.requestedTo.toString() !== user._id.toString()) {
     throw new ApiError(403, "Only the target investor can decline this Deal Room request.");
   }
@@ -314,7 +314,7 @@ const getDealRoomById = async (dealRoomId, userId) => {
 
   if (!dealRoom) throw new ApiError(404, "Deal Room not found.");
 
-  // Check authorization
+                        
   const isParticipant =
     dealRoom.founderId?._id?.toString() === userId.toString() ||
     dealRoom.investorId?._id?.toString() === userId.toString() ||

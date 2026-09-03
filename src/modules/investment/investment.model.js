@@ -15,8 +15,8 @@ const investmentSchema = new mongoose.Schema(
       index: true,
     },
     videoId: { type: mongoose.Schema.Types.ObjectId, ref: "Video" },
-    amount: { type: Number, default: 0 }, // INR (paise stored as INR rupees here)
-    equity: { type: Number, default: 0 }, // %
+    amount: { type: Number, default: 0 },                                         
+    equity: { type: Number, default: 0 },     
     stage: {
       type: String,
       enum: ["interested", "negotiating", "agreed", "completed"],
@@ -35,7 +35,7 @@ const investmentSchema = new mongoose.Schema(
     },
     paidAt: { type: Date },
 
-    // Admin oversight — freeze a suspicious deal mid-flow
+                                                          
     isFrozen: { type: Boolean, default: false },
     frozenReason: { type: String, default: "" },
     flaggedSuspicious: { type: Boolean, default: false },

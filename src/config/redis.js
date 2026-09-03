@@ -1,5 +1,5 @@
-// Redis client. Uses Upstash if env present, else falls back to in-memory mock
-// so dev works without Redis. Same API surface either way.
+                                                                               
+                                                           
 
 let client;
 
@@ -23,7 +23,7 @@ const memoryClient = {
   },
   async set(key, value, ...args) {
     inMemoryStore.set(key, String(value));
-    // support 'EX', seconds
+                            
     const exIdx = args.indexOf("EX");
     if (exIdx !== -1 && args[exIdx + 1]) {
       const seconds = Number(args[exIdx + 1]);
@@ -51,7 +51,7 @@ const memoryClient = {
     return 1;
   },
   async keys(pattern) {
-    // very basic glob: prefix*
+                               
     if (pattern.endsWith("*")) {
       const prefix = pattern.slice(0, -1);
       return [...inMemoryStore.keys()].filter((k) => k.startsWith(prefix));

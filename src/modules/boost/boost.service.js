@@ -19,7 +19,7 @@ const getRazorpay = () => {
   return razorpayClient;
 };
 
-// Apply an active boost to the underlying video and persist boost record.
+                                                                          
 const activateBoost = async (boost) => {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + boost.durationHours * 3600 * 1000);
@@ -33,14 +33,14 @@ const activateBoost = async (boost) => {
     boostedUntil: expiresAt,
   });
 
-  // Refresh feed caches so the boosted pitch jumps to the top
+                                                              
   await videoService.invalidateFeedCache().catch(() => {});
   return boost;
 };
 
-// Create a Razorpay order for a boost. In non-production environments without
-// Razorpay keys configured, the boost is activated immediately (dev fallback)
-// so the flow is testable end-to-end.
+                                                                              
+                                                                              
+                                      
 const createOrder = async (founderId, { videoId, tier }) => {
   const tierDef = BOOST_TIERS[tier];
   if (!tierDef) throw new ApiError(400, "Invalid boost tier");
@@ -56,15 +56,15 @@ const createOrder = async (founderId, { videoId, tier }) => {
 
   const now = new Date();
 
-  // Fast-path check: Video document says it is currently boosted.
+                                                                  
   if (video.isBoosted && video.boostedUntil && video.boostedUntil > now) {
     throw new ApiError(400, "This pitch is already boosted");
   }
 
-  // GAP 5 — Authoritative check via Boost collection.
-  // Protects against Video/Boost record desync (e.g. an admin manually
-  // set isBoosted=false on the Video without expiring the Boost record,
-  // or vice-versa). The Boost collection is the source of truth.
+                                                      
+                                                                       
+                                                                        
+                                                                 
   const existingActiveBoost = await Boost.findOne({
     videoId,
     founderId,
@@ -82,14 +82,14 @@ const createOrder = async (founderId, { videoId, tier }) => {
     amount: tierDef.price,
     durationHours: tierDef.durationHours,
     status: "pending",
-    // shownTo[] starts empty — each boost purchase gets a fresh promotion
-    // cycle; investors who saw a previous boost will see this one again.
+                                                                          
+                                                                         
   });
 
   const razorpay = getRazorpay();
 
   if (!razorpay) {
-    // Production safety: never allow a boost to be created/activated for free in production.
+                                                                                             
     if (process.env.NODE_ENV === "production") {
       await Boost.findByIdAndDelete(boost._id);
       throw new ApiError(
@@ -98,12 +98,12 @@ const createOrder = async (founderId, { videoId, tier }) => {
       );
     }
 
-    // Development fallback when Razorpay keys are not set in .env:
-    // Create a dev order structure so the frontend opens Razorpay Checkout / payment window.
-    // Boost stays in "pending" status until verifyPayment is called.
+                                                                   
+                                                                                             
+                                                                     
     const devOrder = {
       id: `order_dev_${boost._id}`,
-      amount: Math.round(tierDef.price * 100), // INR → paise
+      amount: Math.round(tierDef.price * 100),               
       currency: "INR",
       receipt: `boost_${boost._id}`,
     };
@@ -119,7 +119,7 @@ const createOrder = async (founderId, { videoId, tier }) => {
   }
 
   const order = await razorpay.orders.create({
-    amount: Math.round(tierDef.price * 100), // INR → paise
+    amount: Math.round(tierDef.price * 100),               
     currency: "INR",
     receipt: `boost_${boost._id}`,
     notes: {
@@ -140,7 +140,7 @@ const createOrder = async (founderId, { videoId, tier }) => {
   };
 };
 
-// Idempotent — verifying an already-active boost returns it unchanged.
+                                                                       
 const verifyPayment = async ({
   boostId,
   razorpayOrderId,
@@ -184,7 +184,7 @@ const verifyPayment = async ({
   return boost;
 };
 
-// All boosts belonging to a founder (active first, newest first).
+                                                                  
 const getMyBoosts = async (founderId) => {
   await expireStale(founderId);
   return Boost.find({ founderId })
@@ -193,7 +193,7 @@ const getMyBoosts = async (founderId) => {
     .lean();
 };
 
-// Currently-active boosts (used to render badges in the feed/studio).
+                                                                      
 const getActiveBoosts = async (founderId) => {
   await expireStale(founderId);
   const q = { status: "active", expiresAt: { $gt: new Date() } };
@@ -201,7 +201,7 @@ const getActiveBoosts = async (founderId) => {
   return Boost.find(q).lean();
 };
 
-// Lazily flip expired boosts → "expired" and clear the video flag.
+                                                                   
 const expireStale = async (founderId) => {
   const now = new Date();
   const q = { status: "active", expiresAt: { $lte: now } };
@@ -218,32 +218,32 @@ const expireStale = async (founderId) => {
   if (stale.length) await videoService.invalidateFeedCache().catch(() => {});
 };
 
-// ─────────────────────────────────────────────────────────────────
-// GAP 1 — recordShownTo
-// ─────────────────────────────────────────────────────────────────
-// Atomically appends investorId to Boost.shownTo[] using $addToSet.
-// $addToSet guarantees idempotency — the same investor cannot be
-// inserted twice even under concurrent feed loads.
-//
-// Called by video.service.js:getFeed() after an eligible boosted pitch
-// has been prepended to the investor's feed response.
-// Fire-and-forget: the feed response is NOT blocked on this write.
+                                                                    
+                        
+                                                                    
+                                                                    
+                                                                 
+                                                   
+  
+                                                                       
+                                                      
+                                                                   
 const recordShownTo = async (boostId, investorId) => {
   await Boost.findByIdAndUpdate(boostId, {
     $addToSet: { shownTo: investorId },
   });
 };
 
-// ─────────────────────────────────────────────────────────────────
-// GAP 6 — getActiveBoostedForFeed
-// ─────────────────────────────────────────────────────────────────
-// Returns active boosts that this investor has NOT yet seen (i.e. their
-// investorId is not in shownTo[]). Boost-specific filters only — feed
-// eligibility rules (blocked, not-interested, visibility, pitch status)
-// are applied in video.service.js:getFeed where buildFeedQuery is
-// centralised.
-//
-// Returns: [{ boostId, videoId }]
+                                                                    
+                                  
+                                                                    
+                                                                        
+                                                                      
+                                                                        
+                                                                  
+               
+  
+                                  
 const getActiveBoostedForFeed = async (investorId) => {
   const now = new Date();
   const boosts = await Boost.find({
@@ -260,17 +260,17 @@ const getActiveBoostedForFeed = async (investorId) => {
   }));
 };
 
-// ─────────────────────────────────────────────────────────────────
-// GAP 7 — Development / Staging Diagnostics
-// ─────────────────────────────────────────────────────────────────
-// Returns a detailed diagnostic breakdown of:
-//   1. eligiblePitches (passes feed rules)
-//   2. activeBoostedPitches (active, not expired)
-//   3. boostedAfterShownToFilter (active, not expired, not seen by investor)
-//   4. finalFeed (resulting feed array)
-//   5. effectiveIsBoostedState & shownToState
-//
-// Strictly disabled in production (throws 403 ApiError).
+                                                                    
+                                            
+                                                                    
+                                              
+                                           
+                                                  
+                                                                             
+                                        
+                                              
+  
+                                                         
 const getDiagnostics = async (investorId) => {
   if (process.env.NODE_ENV === "production") {
     throw new ApiError(403, "Diagnostics endpoint is disabled in production");
@@ -342,12 +342,12 @@ module.exports = {
   verifyPayment,
   getMyBoosts,
   getActiveBoosts,
-  // GAP 1 / GAP 6 — new helpers consumed by video.service.js:getFeed
+                                                                     
   recordShownTo,
   getActiveBoostedForFeed,
-  // GAP 7 — dev/staging diagnostics
+                                    
   getDiagnostics,
-  // Exported so video.service.js can trigger background cleanup from getFeed
+                                                                             
   expireStale,
 };
 

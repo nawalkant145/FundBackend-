@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
-// Payment/order history for Pro subscriptions. Current entitlement lives on
-// the User document (user.subscription); this records each purchase.
+                                                                            
+                                                                     
 const subscriptionSchema = new mongoose.Schema(
   {
     userId: {
@@ -10,8 +10,8 @@ const subscriptionSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    planId: { type: String, required: true }, // investor-pro | founder-pro
-    amount: { type: Number, required: true }, // INR
+    planId: { type: String, required: true },                              
+    amount: { type: Number, required: true },       
     durationDays: { type: Number, required: true },
 
     razorpayOrderId: { type: String, default: "" },

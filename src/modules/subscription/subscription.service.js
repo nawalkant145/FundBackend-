@@ -18,7 +18,7 @@ const getRazorpay = () => {
   return razorpayClient;
 };
 
-// Apply an active Pro subscription to the user document.
+                                                         
 const activate = async (sub) => {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + sub.durationDays * 86400 * 1000);
@@ -38,7 +38,7 @@ const activate = async (sub) => {
   return sub;
 };
 
-// Return the current subscription state, auto-expiring if past the date.
+                                                                         
 const getMine = async (userId) => {
   const user = await User.findById(userId).select("subscription role");
   if (!user) throw new ApiError(404, "User not found");
@@ -76,7 +76,7 @@ const createOrder = async (userId) => {
   const razorpay = getRazorpay();
 
   if (!razorpay) {
-    // Dev fallback: activate subscription immediately when Razorpay keys are not set
+                                                                                     
     const active = await activate(sub);
     return {
       subscription: active,
@@ -129,7 +129,7 @@ const verifyPayment = async ({
   return sub;
 };
 
-// Cancel — downgrade to free immediately.
+                                          
 const cancel = async (userId) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");

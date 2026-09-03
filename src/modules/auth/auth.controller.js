@@ -24,7 +24,7 @@ const cookieOptions = {
   sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
 };
 const accessCookieMaxAge = 15 * 60 * 1000;
-const refreshCookieMaxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
+const refreshCookieMaxAge = 30 * 24 * 60 * 60 * 1000;           
 
 const setAuthCookies = (res, accessToken, refreshToken) => {
   res.cookie("accessToken", accessToken, {
@@ -66,8 +66,8 @@ const register = asyncHandler(async (req, res) => {
 
   const email = (rawEmail || "").toLowerCase().trim();
 
-  // Security Protection: Never trust client-supplied verification flags in req.body.
-  // Account starts with emailVerified: false, phoneVerified: false, identityVerified: false, verificationLevel: 0.
+                                                                                     
+                                                                                                                   
   const result = await authService.registerUser({
     name,
     username,
@@ -95,9 +95,9 @@ const register = asyncHandler(async (req, res) => {
   res.status(201).json(new ApiResponse(201, result, "Registration successful"));
 });
 
-// Initiate Signup — creates a temporary Redis session (TTL 30 min).
-// Does NOT create a MongoDB User, issue JWT, or set auth cookies.
-// The permanent account is only created after backend-confirmed identity verification.
+                                                                    
+                                                                  
+                                                                                       
 const initiateSignup = asyncHandler(async (req, res) => {
   validateInitiateSignup(req.body);
   const {
@@ -122,7 +122,7 @@ const initiateSignup = asyncHandler(async (req, res) => {
 
   const email = (rawEmail || "").toLowerCase().trim();
 
-  // Security: ignore any client-supplied verification flags
+                                                            
   const result = await signupSessionService.createSession({
     name,
     username,
@@ -143,13 +143,13 @@ const initiateSignup = asyncHandler(async (req, res) => {
     investmentThesis,
   });
 
-  // Return ONLY signupSessionId + expiresAt — no JWT, no user, no auth cookie
+                                                                              
   res.status(200).json(
     new ApiResponse(200, result, "Signup session created. Proceed to identity verification.")
   );
 });
 
-// Skip identity verification during signup — creates an unverified user account
+                                                                                
 const skipSignup = asyncHandler(async (req, res) => {
   const { signupSessionId } = req.body;
   if (!signupSessionId) throw new ApiError(400, "signupSessionId is required");
@@ -173,7 +173,7 @@ const skipSignup = asyncHandler(async (req, res) => {
 
 
 
-// Live availability check for username / email / phone
+                                                       
 const checkAvailability = asyncHandler(async (req, res) => {
   const { username, email, phone } = req.query;
   const result = await authService.checkAvailability({
@@ -184,7 +184,7 @@ const checkAvailability = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, result, "Availability"));
 });
 
-// Pre-register: send OTP to verify email before account creation
+                                                                 
 const sendPreRegisterOtp = asyncHandler(async (req, res) => {
   validateSendPreRegisterOtp(req.body);
   const { email } = req.body;
@@ -192,7 +192,7 @@ const sendPreRegisterOtp = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, result, "OTP sent to email"));
 });
 
-// Verify pre-register OTP
+                          
 const verifyPreRegisterOtp = asyncHandler(async (req, res) => {
   validateVerifyPreRegisterOtp(req.body);
   const { email, otp } = req.body;

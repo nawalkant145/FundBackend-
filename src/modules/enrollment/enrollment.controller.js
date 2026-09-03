@@ -3,7 +3,7 @@ const asyncHandler = require("../../utils/asyncHandler");
 const enrollmentService = require("./enrollment.service");
 const paymentService = require("../payment/payment.service");
 
-// POST /api/enrollment/purchase (Founder & Investor)
+                                                     
 const purchaseCourse = asyncHandler(async (req, res) => {
   const { courseId } = req.body;
   if (!courseId) {
@@ -28,7 +28,7 @@ const purchaseCourse = asyncHandler(async (req, res) => {
   res.status(201).json(new ApiResponse(201, { enrollment }, "Course enrollment successful"));
 });
 
-// POST /api/enrollment/claim-purchase (Founder & Investor)
+                                                           
 const claimPurchase = asyncHandler(async (req, res) => {
   const { claimToken } = req.body;
   if (!claimToken) {
@@ -39,13 +39,13 @@ const claimPurchase = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, { enrollment }, "Guest purchase claimed successfully"));
 });
 
-// GET /api/enrollment/my-courses (Founder & Investor)
+                                                      
 const getMyCourses = asyncHandler(async (req, res) => {
   const enrollments = await enrollmentService.getMyEnrollments(req.user._id);
   res.status(200).json(new ApiResponse(200, { enrollments }, "Purchased courses retrieved"));
 });
 
-// GET /api/enrollment/:courseId (Founder & Investor)
+                                                     
 const getEnrollment = asyncHandler(async (req, res) => {
   const enrollment = await enrollmentService.getEnrollmentDetails(
     req.user._id,
@@ -54,7 +54,7 @@ const getEnrollment = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, { enrollment }, "Enrollment details retrieved"));
 });
 
-// PATCH /api/enrollment/:courseId/progress (Founder & Investor)
+                                                                
 const updateProgress = asyncHandler(async (req, res) => {
   const enrollment = await enrollmentService.updateProgress(
     req.user._id,

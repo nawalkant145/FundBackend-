@@ -9,7 +9,7 @@ const lessonSchema = new mongoose.Schema(
     cloudinaryPublicId: { type: String, default: "" },
     thumbnailUrl: { type: String, default: "" },
     thumbnailPublicId: { type: String, default: "" },
-    duration: { type: Number, default: 0 }, // in seconds
+    duration: { type: Number, default: 0 },              
     isPreview: { type: Boolean, default: false },
     documentUrl: { type: String, default: "" },
     documentPublicId: { type: String, default: "" },

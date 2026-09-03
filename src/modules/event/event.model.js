@@ -14,7 +14,7 @@ const eventSchema = new mongoose.Schema(
     },
     meetingUrl: { type: String, default: "" },
     bannerUrl: { type: String, default: "" },
-    capacity: { type: Number, default: 0 }, // 0 = unlimited
+    capacity: { type: Number, default: 0 },                 
     registeredCount: { type: Number, default: 0 },
     status: {
       type: String,

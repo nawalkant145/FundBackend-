@@ -13,7 +13,7 @@ const { sendEmail } = require("../../utils/sendEmail");
 const { deleteFromCloudinary } = require("../../utils/cloudinaryUpload");
 const audit = require("../audit/audit.service");
 
-// ─── Dashboard ──────────────────────────────────
+                                                   
 const dashboard = async () => {
   const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -98,7 +98,7 @@ const dashboard = async () => {
   };
 };
 
-// Stats over time (for charts)
+                               
 const stats = async ({ days = 30 } = {}) => {
   const since = new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000);
 
@@ -140,7 +140,7 @@ const stats = async ({ days = 30 } = {}) => {
   return { userGrowth, videoUploads, investmentAmounts };
 };
 
-// ─── User management ────────────────────────────
+                                                   
 const listUsers = async ({
   role,
   search,
@@ -249,7 +249,7 @@ const unbanUser = async (userId, adminId) => {
   return user;
 };
 
-// Temporary suspension — auto-expires after `days`
+                                                   
 const suspendUser = async (userId, days, reason, adminId) => {
   if (userId.toString() === adminId.toString()) {
     throw new ApiError(400, "Cannot suspend yourself");
@@ -299,7 +299,7 @@ const unsuspendUser = async (userId, adminId) => {
   return user;
 };
 
-// Impersonate — issue a short-lived access token to "view as" a user
+                                                                     
 const impersonateUser = async (userId, adminId) => {
   if (userId.toString() === adminId.toString()) {
     throw new ApiError(400, "Cannot impersonate yourself");
@@ -310,7 +310,7 @@ const impersonateUser = async (userId, adminId) => {
     throw new ApiError(403, "Cannot impersonate another admin");
   }
   const { generateAccessToken } = require("../../utils/generateToken");
-  // Short-lived token, tagged with who is impersonating (for traceability)
+                                                                           
   const token = generateAccessToken({
     _id: user._id.toString(),
     role: user.role,
@@ -328,7 +328,7 @@ const impersonateUser = async (userId, adminId) => {
 };
 
 const editUser = async (userId, updates, adminId) => {
-  // Admin can edit limited fields directly
+                                           
   const allowed = [
     "name",
     "phone",
@@ -419,7 +419,7 @@ const deleteUserHard = async (userId, adminId) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
 
-  // Cleanup
+            
   const videos = await Video.find({ founderId: userId });
   for (const v of videos) {
     if (v.cloudinaryPublicId) {
@@ -443,7 +443,7 @@ const deleteUserHard = async (userId, adminId) => {
   return { ok: true };
 };
 
-// ─── Video management ───────────────────────────
+                                                   
 const listVideos = async ({ status, founderId, limit = 30, cursor }) => {
   limit = Math.min(Number(limit) || 30, 100);
   const q = {};
@@ -554,7 +554,7 @@ const forceDeleteVideo = async (videoId, adminId, reason) => {
   const video = await Video.findById(videoId);
   if (!video) throw new ApiError(404, "Video not found");
 
-  // Soft-delete — keep in DB for 30 days in case of accidental removal
+                                                                       
   video.status = "deleted";
   video.deletedAt = new Date();
   video.rejectionReason = reason || "Removed by admin";
@@ -577,7 +577,7 @@ const forceDeleteVideo = async (videoId, adminId, reason) => {
   return { ok: true };
 };
 
-// Permanently purge a soft-deleted video (admin only, after review)
+                                                                    
 const purgeVideo = async (videoId, adminId) => {
   const video = await Video.findById(videoId);
   if (!video) throw new ApiError(404, "Video not found");
@@ -597,7 +597,7 @@ const purgeVideo = async (videoId, adminId) => {
   return { ok: true };
 };
 
-// Restore a soft-deleted video
+                               
 const restoreVideo = async (videoId, adminId) => {
   const video = await Video.findById(videoId);
   if (!video) throw new ApiError(404, "Video not found");
@@ -618,7 +618,7 @@ const restoreVideo = async (videoId, adminId) => {
   return video;
 };
 
-// List trash (soft-deleted videos within last 30 days)
+                                                       
 const listTrash = async ({ limit = 50, cursor } = {}) => {
   limit = Math.min(Number(limit) || 50, 100);
   const q = { status: "deleted" };
@@ -636,7 +636,7 @@ const listTrash = async ({ limit = 50, cursor } = {}) => {
   };
 };
 
-// ─── KYC & Compliance Workspace (Level 1 to 5) ─────────────
+                                                              
 const Company = require("../company/company.model");
 const InvestmentKYC = require("../investmentKyc/investmentKyc.model");
 const RiskAssessment = require("../risk/risk.model");
@@ -675,9 +675,9 @@ const getOperationalKpis = async () => {
     User.countDocuments({ verificationLevel: 2 }),
     User.countDocuments({ verificationLevel: 3 }),
     User.countDocuments({ verificationLevel: 4 }),
-    // DigiLocker exceptions awaiting human review (name/DOB below match threshold)
+                                                                                   
     KYC.countDocuments({ verificationMethod: "digilocker", manualReviewRequired: true, verificationStatus: "under_review" }),
-    // DigiLocker submissions auto-approved without any human touch
+                                                                   
     KYC.countDocuments({ verificationMethod: "digilocker", verificationStatus: "approved" }),
   ]);
 
@@ -730,9 +730,9 @@ const getPendingQueues = async (queueType = "personal") => {
   }
 
   if (queueType === "digilocker" || queueType === "manual_review") {
-    // DigiLocker exceptions only — auto-approved records never land here since
-    // they don't need a human decision. Includes the account's on-file name/DOB
-    // alongside the DigiLocker-extracted data and match score for comparison.
+                                                                               
+                                                                                
+                                                                              
     const records = await KYC.find({
       verificationMethod: "digilocker",
       manualReviewRequired: true,
@@ -757,7 +757,7 @@ const getPendingQueues = async (queueType = "personal") => {
     }));
   }
 
-  // Personal KYC Queue (manual uploads + any DigiLocker record still under_review)
+                                                                                   
   const pendingKycDocs = await KYC.find({
     verificationStatus: { $in: ["pending", "under_review", "submitted", "resubmitted"] },
   })
@@ -792,7 +792,7 @@ const approveDocuments = async (targetId, adminId, notes = "") => {
     kycDoc.reviewedBy = adminId;
     kycDoc.reviewedAt = new Date();
     if (notes) kycDoc.reviewNotes = notes;
-    // Clear the manual-review flag if an admin is now clearing a DigiLocker exception
+                                                                                      
     if (kycDoc.verificationMethod === "digilocker") {
       kycDoc.manualReviewRequired = false;
       kycDoc.verificationResult = "passed";
@@ -1008,7 +1008,7 @@ const completeDueDiligence = async (userId, adminId, notes = "") => {
   return { message: "Due Diligence marked as completed", user: user.toSafeJSON() };
 };
 
-// ─── Reports ────────────────────────────────────
+                                                   
 const listReports = async ({ status, type, limit = 50, cursor }) => {
   limit = Math.min(Number(limit) || 50, 200);
   const q = {};
@@ -1056,7 +1056,7 @@ const resolveReport = async (
   return r;
 };
 
-// ─── Comments ───────────────────────────────────
+                                                   
 const listAllComments = async ({ videoId, limit = 50, cursor }) => {
   limit = Math.min(Number(limit) || 50, 200);
   const q = {};
@@ -1120,7 +1120,7 @@ const deleteComment = async (commentId, adminId) => {
   return { ok: true };
 };
 
-// ─── Investments ────────────────────────────────
+                                                   
 const listInvestments = async ({ status, stage, limit = 30, cursor }) => {
   limit = Math.min(Number(limit) || 30, 100);
   const q = {};
@@ -1175,7 +1175,7 @@ const refundInvestment = async (investmentId, adminId, reason) => {
   return inv;
 };
 
-// Freeze / unfreeze a deal mid-flow (suspected fraud)
+                                                      
 const freezeInvestment = async (investmentId, adminId, reason) => {
   const inv = await Investment.findByIdAndUpdate(
     investmentId,
@@ -1217,7 +1217,7 @@ const unfreezeInvestment = async (investmentId, adminId) => {
   return inv;
 };
 
-// Export all investments as CSV (for accounting / compliance)
+                                                              
 const exportInvestmentsCsv = async () => {
   const items = await Investment.find({})
     .sort({ createdAt: -1 })
@@ -1260,7 +1260,7 @@ const exportInvestmentsCsv = async () => {
   return [header, ...rows].join("\n");
 };
 
-// Detect suspicious investor activity (many deals in a short window)
+                                                                     
 const detectSuspicious = async () => {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const grouped = await Investment.aggregate([
@@ -1272,10 +1272,10 @@ const detectSuspicious = async () => {
         totalAmount: { $sum: "$amount" },
       },
     },
-    { $match: { count: { $gte: 5 } } }, // 5+ deals in 24h is unusual
+    { $match: { count: { $gte: 5 } } },                              
     { $sort: { count: -1 } },
   ]);
-  // Attach investor info
+                         
   const ids = grouped.map((g) => g._id);
   const users = await User.find({ _id: { $in: ids } })
     .select("name email")
@@ -1289,7 +1289,7 @@ const detectSuspicious = async () => {
   }));
 };
 
-// ─── Calls / Chats overview ─────────────────────
+                                                   
 const listCalls = async ({ status, limit = 30, cursor }) => {
   limit = Math.min(Number(limit) || 30, 100);
   const q = {};
@@ -1344,7 +1344,7 @@ const getChatMessages = async (chatId, { limit = 50, cursor }) => {
   };
 };
 
-// ─── Broadcast ─────────────────────────────────
+                                                  
 const broadcastNotification = async (
   { title, body, role, sendEmail: shouldEmail },
   adminId,
@@ -1386,7 +1386,7 @@ const broadcastNotification = async (
   return { sent: count };
 };
 
-// ─── Audit log access ──────────────────────────
+                                                  
 const auditLogs = (filters) => audit.list(filters);
 
 module.exports = {

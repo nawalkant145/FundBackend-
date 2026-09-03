@@ -2,7 +2,7 @@ const chatService = require("../modules/chat/chat.service");
 const notif = require("../modules/notification/notification.service");
 
 module.exports = (io, socket) => {
-  // Join a chat room
+                     
   socket.on("join_chat", async ({ chatId }) => {
     try {
       if (!chatId) return;
@@ -47,10 +47,10 @@ module.exports = (io, socket) => {
           replyTo,
         });
 
-        // Emit message sent status back to sender
+                                                  
         socket.emit("message_sent", { messageId: message._id, status: "sent", message });
 
-        // Emit to chat room (both new_message and receive_message for compatibility)
+                                                                                     
         io.to(chatId.toString()).emit("new_message", message);
         io.to(chatId.toString()).emit("receive_message", message);
 
@@ -59,7 +59,7 @@ module.exports = (io, socket) => {
           .find((id) => id !== socket.userId.toString());
 
         if (otherId) {
-          // Send delivered status
+                                  
           io.to(otherId).emit("message_delivered", {
             messageId: message._id,
             chatId,

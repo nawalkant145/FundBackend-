@@ -14,7 +14,7 @@ const videoSchema = new mongoose.Schema(
     hlsUrl: { type: String, default: "" },
     thumbnailUrl: { type: String, default: "" },
     cloudinaryPublicId: { type: String, default: "" },
-    duration: { type: Number, required: true }, // seconds
+    duration: { type: Number, required: true },           
     industry: { type: String, default: "", index: true },
     fundingStage: { type: String, default: "", index: true },
     askAmount: { type: Number, default: 0 },

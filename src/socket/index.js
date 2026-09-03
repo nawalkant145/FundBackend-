@@ -11,14 +11,14 @@ let io = null;
 const initSocket = (httpServer) => {
   io = new Server(httpServer, {
     cors: {
-      origin: (origin, cb) => cb(null, true), // allow all (mobile no-origin) — auth middleware enforces
+      origin: (origin, cb) => cb(null, true),                                                           
       credentials: true,
     },
     pingTimeout: 30000,
     pingInterval: 25000,
   });
 
-  // ─── Auth handshake ─────────────────────────
+                                                 
   io.use(async (socket, next) => {
     try {
       const token =
@@ -47,10 +47,10 @@ const initSocket = (httpServer) => {
   io.on("connection", async (socket) => {
     console.log(`🔌 Socket connected: ${socket.userId}`);
 
-    // Join personal room (for direct emits)
+                                            
     socket.join(socket.userId);
 
-    // Online status
+                    
     try {
       await getClient().set(`online:${socket.userId}`, "1", "EX", 60);
       await User.findByIdAndUpdate(socket.userId, {
@@ -63,14 +63,14 @@ const initSocket = (httpServer) => {
       });
     } catch {}
 
-    // Heartbeat to refresh online status
+                                         
     socket.on("heartbeat", async () => {
       try {
         await getClient().set(`online:${socket.userId}`, "1", "EX", 60);
       } catch {}
     });
 
-    // Target room subscription for pitches/posts
+                                                 
     socket.on("join_target", ({ videoId, postId }) => {
       if (videoId) socket.join(`video:${videoId}`);
       if (postId) socket.join(`post:${postId}`);

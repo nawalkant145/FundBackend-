@@ -1,4 +1,4 @@
-// Verifies every module file loads without syntax/require errors.
+                                                                  
 const path = require("path");
 const projectRoot = path.join(__dirname, "..");
 process.chdir(projectRoot);

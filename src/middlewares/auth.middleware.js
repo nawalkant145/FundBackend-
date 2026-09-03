@@ -3,17 +3,17 @@ const asyncHandler = require("../utils/asyncHandler");
 const { verifyAccessToken } = require("../utils/generateToken");
 const User = require("../modules/user/user.model");
 
-// Verifies JWT access token from Authorization header or cookie
+                                                                
 const authenticate = asyncHandler(async (req, res, next) => {
   let token;
 
-  // 1. Bearer token (mobile)
+                             
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
     token = authHeader.split(" ")[1];
   }
 
-  // 2. httpOnly cookie (web)
+                             
   if (!token && req.cookies?.accessToken) {
     token = req.cookies.accessToken;
   }
@@ -51,9 +51,9 @@ const authenticate = asyncHandler(async (req, res, next) => {
   next();
 });
 
-// Like authenticate, but does NOT throw if no token is present.
-// Populates req.user if a valid token exists; sets req.user = null otherwise.
-// Used for routes that are accessible to both authenticated and unauthenticated users.
+                                                                
+                                                                              
+                                                                                       
 const optionalAuthenticate = async (req, res, next) => {
   try {
     let token;

@@ -11,7 +11,7 @@ const path = require("path");
 const { verifyS3Object, s3UrlToKey } = require("../../config/aws");
 
 
-// Unified Level Status Card & Progress Calculator
+                                                  
 const getVerificationStatus = async (userId) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
@@ -23,7 +23,7 @@ const getVerificationStatus = async (userId) => {
     RiskAssessment.findOne({ userId }).sort({ createdAt: -1 }),
   ]);
 
-  // Ensure levels and profile completeness are updated
+                                                       
   user.recomputeVerificationLevel();
 
   return {
@@ -94,7 +94,7 @@ const generateReferenceId = () => {
   return `KYC-${dateStr}-${rand}`;
 };
 
-// Phase 2 Personal Identity Submission (manual upload path with AWS S3 Direct Upload)
+                                                                                      
 const submitPersonalKyc = async (userId, body = {}) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
@@ -120,7 +120,7 @@ const submitPersonalKyc = async (userId, body = {}) => {
     );
   }
 
-  // Verify S3 objects exist in bucket, are in identity folder, and belong to authenticated userId
+                                                                                                  
   await verifyS3Object(documentFrontKey, "kyc", userId);
   if (documentBackKey) await verifyS3Object(documentBackKey, "kyc", userId);
   await verifyS3Object(selfieKey, "kyc", userId);
@@ -129,7 +129,7 @@ const submitPersonalKyc = async (userId, body = {}) => {
     ? crypto.createHash("sha256").update(documentNumber.trim().toUpperCase()).digest("hex")
     : "";
 
-  // Duplicate document check across different accounts
+                                                       
   if (docHash) {
     const existing = await KYC.findOne({ documentNumberHash: docHash, userId: { $ne: userId } });
     if (existing) {
@@ -183,7 +183,7 @@ const submitPersonalKyc = async (userId, body = {}) => {
   return kyc;
 };
 
-// Resubmit Personal Identity Docs (manual upload path with AWS S3 Direct Upload)
+                                                                                 
 const resubmitPersonalKyc = async (userId, body = {}) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
@@ -209,7 +209,7 @@ const resubmitPersonalKyc = async (userId, body = {}) => {
     );
   }
 
-  // Verify S3 objects exist in bucket, are in identity folder, and belong to authenticated userId
+                                                                                                  
   await verifyS3Object(documentFrontKey, "kyc", userId);
   if (documentBackKey) await verifyS3Object(documentBackKey, "kyc", userId);
   await verifyS3Object(selfieKey, "kyc", userId);
@@ -262,7 +262,7 @@ const resubmitPersonalKyc = async (userId, body = {}) => {
   return kyc;
 };
 
-// Fetch KYC Submission Details by ID
+                                     
 const getKycById = async (id) => {
   const kyc = await KYC.findById(id)
     .populate("userId", "name email role phone avatar companyName verificationLevel")
@@ -271,7 +271,7 @@ const getKycById = async (id) => {
   return kyc;
 };
 
-// Phase 3 Founder Company Verification Submission
+                                                  
 const submitCompanyKyc = async (userId, body = {}) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
@@ -296,7 +296,7 @@ const submitCompanyKyc = async (userId, body = {}) => {
     );
   }
 
-  // Verify registrationCertificate S3 key exists in bucket and belongs to authenticated userId
+                                                                                               
   const certType = registrationCertificateKey.includes("uploads/company/") ? "company" : "document";
   await verifyS3Object(registrationCertificateKey, certType, userId);
 
@@ -324,7 +324,7 @@ const submitCompanyKyc = async (userId, body = {}) => {
   return company;
 };
 
-// Phase 4 Investor Transaction KYC Submission (unchanged)
+                                                          
 const submitInvestmentKyc = async (userId, { addressProof, bankAccount, incomeProofUrl, netWorthDeclaration }) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
@@ -357,24 +357,24 @@ const submitInvestmentKyc = async (userId, { addressProof, bankAccount, incomePr
   return investorKyc;
 };
 
-// ============================================================================
-// DigiLocker automatic KYC verification
-// ============================================================================
+                                                                               
+                                        
+                                                                               
 
-// Step 1 — user clicks "Verify with DigiLocker"
-// When called during signup (before account creation), signupSessionId is provided.
-// When called by an authenticated user, userId is provided (existing post-account KYC).
+                                                
+                                                                                    
+                                                                                        
 const initiateDigilockerVerification = async (userId, { signupSessionId } = {}) => {
   if (signupSessionId) {
-    // Pre-account signup flow — validate the session exists before redirecting
+                                                                               
     const signupSessionService = require("../auth/signupSession.service");
     const session = await signupSessionService.getSession(signupSessionId);
-    // Generate the OAuth URL embedding signupSessionId in the signed state
+                                                                           
     const { url, state } = digilockerService.getAuthorizationUrl(null, { signupSessionId });
     return { redirectUrl: url, state };
   }
 
-  // Existing post-account flow — user already has a MongoDB User record
+                                                                        
   const user = await User.findById(userId);
 
 
@@ -385,8 +385,8 @@ const initiateDigilockerVerification = async (userId, { signupSessionId } = {}) 
   await KYC.create({
     userId,
     referenceId: generateReferenceId(),
-    documentType: "aadhar", // placeholder; DigiLocker may supply multiple doc types
-    documentFront: "digilocker-pending", // required field on schema; not used for this method
+    documentType: "aadhar",                                                         
+    documentFront: "digilocker-pending",                                                      
     selfie: "digilocker-pending",
     verificationStatus: "under_review",
     verificationMethod: "digilocker",
@@ -401,17 +401,17 @@ const initiateDigilockerVerification = async (userId, { signupSessionId } = {}) 
 };
 
 
-// Step 2 — DigiLocker redirects back with ?code=...&state=...
+                                                              
 const handleDigilockerCallback = async ({ code, state }) => {
   if (!code) throw new ApiError(400, "Missing authorization code from DigiLocker");
 
   const statePayload = digilockerService.verifyState(state);
   const { userId, signupSessionId } = statePayload;
 
-  // ── PRE-ACCOUNT SIGNUP FLOW ──────────────────────────────────────────────
-  // The user has NOT yet been created in MongoDB.
-  // On success: create permanent User + issue JWT.
-  // On failure: do NOT create User, do NOT issue JWT.
+                                                                              
+                                                  
+                                                   
+                                                      
   if (signupSessionId) {
     const signupSessionService = require("../auth/signupSession.service");
 
@@ -419,7 +419,7 @@ const handleDigilockerCallback = async ({ code, state }) => {
     try {
       tokenResponse = await digilockerService.exchangeCodeForToken(code);
     } catch (err) {
-      // Verification failed — return failed status (no user created)
+                                                                     
       return { status: "failed", signupSessionId, reason: "OAuth token exchange failed" };
     }
 
@@ -431,7 +431,7 @@ const handleDigilockerCallback = async ({ code, state }) => {
       return { status: "failed", signupSessionId, reason: "No documents returned by DigiLocker" };
     }
 
-    // Retrieve session to check name match
+                                           
     let session;
     try {
       session = await signupSessionService.getSession(signupSessionId);
@@ -447,27 +447,27 @@ const handleDigilockerCallback = async ({ code, state }) => {
     });
 
     if (!match.passed) {
-      // Identity mismatch — fail (do not create account)
+                                                         
       return { status: "failed", signupSessionId, reason: "Identity name mismatch" };
     }
 
-    // Verification passed — finalize permanent account creation
+                                                                
     try {
       const result = await signupSessionService.finalizeAccountCreation(signupSessionId, {
         kycDetails: { extractedData, documentsVerified, digilockerReference: tokenResponse.digilocker_id || "" },
       });
-      // Result contains { user, accessToken, refreshToken } to be sent back in cookies
+                                                                                       
       return { status: "approved", ...result };
     } catch (err) {
-      // Account creation failed (e.g., race-condition duplicate) — do not leave orphaned state
+                                                                                               
       return { status: "failed", signupSessionId, reason: err.message };
     }
   }
 
 
 
-  // ── POST-ACCOUNT FLOW (Existing Authenticated User) ──────────────────────
-  // The user already has a MongoDB User record (they are doing KYC post-signup).
+                                                                              
+                                                                                 
   const kyc = await KYC.findOne({ userId, verificationMethod: "digilocker" }).sort({ createdAt: -1 });
   if (!kyc) throw new ApiError(404, "No pending DigiLocker verification found for this user");
 
@@ -539,7 +539,7 @@ const handleDigilockerCallback = async ({ code, state }) => {
     return { status: "approved", kyc };
   }
 
-  // Name/DOB didn't clear the auto-approval bar — route to human review, not a rejection.
+                                                                                          
   kyc.digilockerStatus = "completed";
   kyc.verificationStatus = "under_review";
   kyc.verificationResult = "manual_review_required";
@@ -553,7 +553,7 @@ const handleDigilockerCallback = async ({ code, state }) => {
 };
 
 
-// Step 3 — frontend polls this while waiting for the callback to complete
+                                                                          
 const getDigilockerStatus = async (userId) => {
   const kyc = await KYC.findOne({ userId, verificationMethod: "digilocker" }).sort({ createdAt: -1 });
   if (!kyc) throw new ApiError(404, "No DigiLocker verification found for this user");
@@ -569,7 +569,7 @@ const getDigilockerStatus = async (userId) => {
   };
 };
 
-// Fallback — user opts into (or is routed to) manual upload after a DigiLocker failure
+                                                                                       
 const fallbackToManual = async (userId) => {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");

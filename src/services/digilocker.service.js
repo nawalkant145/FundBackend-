@@ -2,20 +2,20 @@ const crypto = require("crypto");
 const digilockerConfig = require("../config/digilocker.config");
 const ApiError = require("../utils/ApiError");
 
-// --- Signed OAuth state -----------------------------------------------------
-// Carries the userId OR signupSessionId through the DigiLocker redirect without
-// depending on session cookies, which can drop across cross-site redirects.
-// Signed with HMAC-SHA256 so it can't be tampered with.
+                                                                               
+                                                                                
+                                                                            
+                                                        
 
 const generateState = (userId, { signupSessionId } = {}) => {
   const payload = {
     ts: Date.now(),
   };
   if (signupSessionId) {
-    // Pre-account flow — no userId yet
+                                       
     payload.signupSessionId = signupSessionId;
   } else {
-    // Post-account flow — existing authenticated user
+                                                      
     payload.userId = userId ? userId.toString() : undefined;
   }
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -46,11 +46,11 @@ const verifyState = (state) => {
   if (Date.now() - payload.ts > digilockerConfig.stateMaxAgeMs) {
     throw new ApiError(400, "DigiLocker session expired — please retry verification");
   }
-  return payload; // { userId?, signupSessionId?, ts }
+  return payload;                                     
 };
 
 
-// --- Authorization URL -------------------------------------------------------
+                                                                                
 
 const getAuthorizationUrl = (userId, { signupSessionId } = {}) => {
   const state = generateState(userId, { signupSessionId });
@@ -70,7 +70,7 @@ const getAuthorizationUrl = (userId, { signupSessionId } = {}) => {
 };
 
 
-// --- Token exchange -----------------------------------------------------------
+                                                                                 
 
 const exchangeCodeForToken = async (code) => {
   if (digilockerConfig.mockMode) {
@@ -99,12 +99,12 @@ const exchangeCodeForToken = async (code) => {
   return res.json();
 };
 
-// --- Document retrieval --------------------------------------------------------
-// TODO: verify against the API Setu Requester spec once sandbox access is live.
-// e-Aadhaar and PAN are typically returned as signed XML; this fetches the raw
-// issued-document list, then the content for each requested doc type, and does
-// light parsing. Swap the naive regex parsing below for a proper XML parser
-// (e.g. `xml2js`) once real document samples are available.
+                                                                                  
+                                                                                
+                                                                               
+                                                                               
+                                                                            
+                                                            
 
 const fetchIssuedDocuments = async (accessToken) => {
   if (digilockerConfig.mockMode) {
@@ -141,7 +141,7 @@ const fetchDocumentContent = async (accessToken, uri) => {
   return res.text();
 };
 
-// Naive XML attribute extraction — replace with a real XML parser before production use.
+                                                                                         
 const extractAttr = (xml, attr) => {
   const match = xml.match(new RegExp(`${attr}="([^"]*)"`, "i"));
   return match ? match[1] : "";
@@ -159,10 +159,7 @@ const parsePanXml = (xml) => ({
   panNumber: extractAttr(xml, "panNumber"),
 });
 
-/**
- * Fetches and parses all consented documents for a user, returning a flat
- * extracted-data object plus the list of document types successfully verified.
- */
+                                                                                                                                                                     
 const retrieveAndParseDocuments = async (accessToken) => {
   const issued = await fetchIssuedDocuments(accessToken);
   const documentsVerified = [];

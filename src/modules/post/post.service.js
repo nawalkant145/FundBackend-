@@ -20,7 +20,7 @@ const createPost = async (userId, files, body, userRole) => {
   }
   const dailyLimit = settings.maxPostsPerDay || MAX_POSTS_PER_DAY;
 
-  // Check daily limit
+                      
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const count = await Post.countDocuments({
@@ -33,7 +33,7 @@ const createPost = async (userId, files, body, userRole) => {
 
   const { caption, link, hashtags, type } = body;
 
-  // Investor-specific post card restriction: ONLY images section and thought section allowed
+                                                                                             
   if (userRole === "investor") {
     const postType = type || (files?.length > 0 ? "images" : "text");
     if (postType === "text") {
@@ -55,12 +55,12 @@ const createPost = async (userId, files, body, userRole) => {
     }
   }
 
-  // Thoughts (text-only) posts must not carry any images
+                                                         
   if (type === "text" && files?.length > 0) {
     throw new ApiError(400, "Text posts cannot include images");
   }
 
-  // Upload images to Cloudinary
+                                
   let imageUrls = [];
   if (files?.length > 0) {
     if (files.length > MAX_IMAGES) {
@@ -96,7 +96,7 @@ const createPost = async (userId, files, body, userRole) => {
       : [],
   });
 
-  // Auto-flag caption for admin review if it had profanity
+                                                           
   try {
     const moderation = require("../moderation/moderation.service");
     moderation
@@ -113,7 +113,7 @@ const createPost = async (userId, files, body, userRole) => {
   return post.toObject();
 };
 
-// enrichPost / enrichPosts are now imported from src/utils/engagement.js
+                                                                         
 
 const getFeed = async (userId, { cursor, limit = 20 }) => {
   const query = { isDeleted: false };
@@ -176,7 +176,7 @@ const updatePost = async (postId, userId, body) => {
     ).map((h) => h.trim().replace(/^#/, ""));
   }
   await post.save();
-  // Re-fetch as lean with populated author so the response is consistent
+                                                                         
   const fresh = await Post.findById(post._id)
     .populate("authorId", "name username avatar role companyName isVerified")
     .lean();
@@ -209,7 +209,7 @@ const likePost = async (postId, userId) => {
     );
   }
 
-  // Send notification to post author when liked (if not liking own post)
+                                                                         
   if (!liked && post.authorId && post.authorId.toString() !== uidStr) {
     try {
       const notif = require("../notification/notification.service");
@@ -234,7 +234,7 @@ const likePost = async (postId, userId) => {
     totalLikes: total,
   };
 
-  // Broadcast real-time engagement update to all connected clients
+                                                                   
   try {
     const { getIO } = require("../../socket");
     const io = getIO();
@@ -278,7 +278,7 @@ const savePost = async (postId, userId) => {
     );
   }
 
-  // Send notification to post author when saved (if not saving own post)
+                                                                         
   if (!saved && post.authorId && post.authorId.toString() !== uidStr) {
     try {
       const notif = require("../notification/notification.service");
@@ -303,7 +303,7 @@ const savePost = async (postId, userId) => {
     totalSaves: total,
   };
 
-  // Broadcast real-time engagement update to all connected clients
+                                                                   
   try {
     const { getIO } = require("../../socket");
     const io = getIO();
@@ -322,7 +322,7 @@ const savePost = async (postId, userId) => {
 };
 
 const getSavedPosts = async (userId) => {
-  // Explicitly cast to ObjectId so Mongoose array queries always match
+                                                                       
   const uid = toObjectId(userId);
 
   const posts = await Post.find({ saves: uid, isDeleted: false })
@@ -331,7 +331,7 @@ const getSavedPosts = async (userId) => {
     .lean();
 
   const enriched = enrichPosts(posts, userId);
-  // Ensure isSaved is explicitly true for all saved posts
+                                                          
   return enriched.map((p) => ({ ...p, isSaved: true }));
 };
 

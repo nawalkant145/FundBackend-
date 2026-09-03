@@ -83,9 +83,7 @@ const receiptEmailHtml = ({ name, courseTitle, price, paymentMethod, transaction
 </html>
 `;
 
-/**
- * Verify payment & enroll user (Founder or Investor) in course
- */
+                                                                         
 const purchaseAndEnroll = async (user, courseId, paymentData = {}) => {
   const { transactionId, paymentId, paymentMethod, amount } = paymentData;
 
@@ -98,12 +96,12 @@ const purchaseAndEnroll = async (user, courseId, paymentData = {}) => {
     throw new ApiError(400, "Cannot purchase a course that is not published");
   }
 
-  // Verify payment parameters (ensure purchase is verified)
+                                                            
   const txId = transactionId || paymentId || `TXN${Date.now().toString(36).toUpperCase()}`;
   const method = paymentMethod || "Online Payment";
   const amountPaid = amount !== undefined ? Number(amount) : (course.price || 0);
 
-  // Check if user is already enrolled
+                                      
   let enrollment = await Enrollment.findOne({ userId: user._id, courseId });
   if (enrollment) {
     if (enrollment.status !== "active") {
@@ -113,7 +111,7 @@ const purchaseAndEnroll = async (user, courseId, paymentData = {}) => {
     return enrollment;
   }
 
-  // Create persistent Enrollment
+                                 
   enrollment = await Enrollment.create({
     userId: user._id,
     courseId,
@@ -125,10 +123,10 @@ const purchaseAndEnroll = async (user, courseId, paymentData = {}) => {
     progress: { completedLessons: [], lastLessonId: "" },
   });
 
-  // Increment course enrollment count
+                                      
   await Course.findByIdAndUpdate(courseId, { $inc: { enrollmentCount: 1 } });
 
-  // Send receipt email asynchronously (fire-and-forget)
+                                                        
   if (user.email) {
     const formattedDate = new Date().toLocaleDateString("en-IN", {
       day: "2-digit",
@@ -157,9 +155,7 @@ const purchaseAndEnroll = async (user, courseId, paymentData = {}) => {
   return enrollment;
 };
 
-/**
- * Get all active course enrollments for logged in Founder / Investor
- */
+                                                                               
 const getMyEnrollments = async (userId) => {
   const enrollments = await Enrollment.find({ userId, status: "active" })
     .populate({
@@ -168,13 +164,11 @@ const getMyEnrollments = async (userId) => {
     })
     .sort({ enrolledAt: -1 });
 
-  // Filter out any enrollments whose course was deleted
+                                                        
   return enrollments.filter((e) => e.courseId && e.courseId.status !== "deleted");
 };
 
-/**
- * Get single enrollment details for a specific course
- */
+                                                                
 const getEnrollmentDetails = async (userId, courseId) => {
   const enrollment = await Enrollment.findOne({ userId, courseId, status: "active" });
   if (!enrollment) {
@@ -183,9 +177,7 @@ const getEnrollmentDetails = async (userId, courseId) => {
   return enrollment;
 };
 
-/**
- * Update lesson completion progress
- */
+                                              
 const updateProgress = async (userId, courseId, { lessonId, completed }) => {
   const enrollment = await Enrollment.findOne({ userId, courseId, status: "active" });
   if (!enrollment) {

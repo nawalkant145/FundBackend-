@@ -14,11 +14,11 @@ const investmentKycSchema = new mongoose.Schema(
       default: "individual",
     },
     
-    // Organization / Firm Verification (if investing via entity)
+                                                                 
     isCorporateEntity: { type: Boolean, default: false },
     entityDetails: {
       companyName: { type: String, default: "" },
-      registrationType: { type: String, default: "" }, // Company, LLP, Firm
+      registrationType: { type: String, default: "" },                      
       CIN_LLPIN: { type: String, default: "" },
       companyPAN: { type: String, default: "" },
       GSTIN: { type: String, default: "" },
@@ -37,7 +37,7 @@ const investmentKycSchema = new mongoose.Schema(
       accountNumber: { type: String, required: true },
       ifscCode: { type: String, required: true },
       bankName: { type: String, required: true },
-      proofUrl: { type: String, default: "" }, // cancelled cheque or statement
+      proofUrl: { type: String, default: "" },                                 
       isVerified: { type: Boolean, default: false },
     },
     incomeProofUrl: { type: String, default: "" },
@@ -46,7 +46,7 @@ const investmentKycSchema = new mongoose.Schema(
       declarationDocUrl: { type: String, default: "" },
     },
 
-    // Investment Profile Declarations
+                                      
     investmentProfile: {
       preferredSectors: [{ type: String }],
       typicalTicketSizeMin: { type: Number, default: 0 },
@@ -67,7 +67,7 @@ const investmentKycSchema = new mongoose.Schema(
       enum: ["clear", "flagged", "pending"],
       default: "clear",
     },
-    pepCheck: { type: Boolean, default: false }, // Politically Exposed Person
+    pepCheck: { type: Boolean, default: false },                              
     verificationStatus: {
       type: String,
       enum: ["none", "pending", "approved", "rejected", "info_requested"],

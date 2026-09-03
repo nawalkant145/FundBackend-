@@ -36,7 +36,7 @@ const verifyPayment = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, { investment: inv }, "Payment verified"));
 });
 
-// Razorpay webhook — uses raw body, no auth
+                                            
 const webhook = asyncHandler(async (req, res) => {
   const sig = req.headers["x-razorpay-signature"];
   const result = await investmentService.handleWebhook(req.body, sig);

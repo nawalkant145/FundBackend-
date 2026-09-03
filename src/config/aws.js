@@ -14,9 +14,7 @@ let s3Client = null;
 let isStorageInitialized = false;
 let initializationError = null;
 
-/**
- * Helper to clean up local temp files created by Multer
- */
+                                                                  
 const cleanupTempFile = (filePath) => {
   if (filePath && fs.existsSync(filePath)) {
     try {
@@ -27,18 +25,13 @@ const cleanupTempFile = (filePath) => {
   }
 };
 
-/**
- * Normalizes and formats the S3 Object URL
- * Format: https://{bucket-name}.s3.{region}.amazonaws.com/{s3Key}
- */
+                                                                                                                         
 const formatS3Url = (bucket, region, s3Key) => {
   const cleanKey = s3Key.startsWith("/") ? s3Key.slice(1) : s3Key;
   return `https://${bucket}.s3.${region}.amazonaws.com/${cleanKey}`;
 };
 
-/**
- * Extracts s3Key from full S3 URL, legacy CloudFront URL, or returns raw s3Key
- */
+                                                                                         
 const s3UrlToKey = (urlOrKey) => {
   if (!urlOrKey || typeof urlOrKey !== "string") return "";
   if (!urlOrKey.startsWith("http://") && !urlOrKey.startsWith("https://")) {
@@ -53,9 +46,7 @@ const s3UrlToKey = (urlOrKey) => {
   }
 };
 
-/**
- * Initializes the AWS S3 client with credential flexibility (Env variables or EC2 IAM Role)
- */
+                                                                                                      
 const initialize = () => {
   const bucket = process.env.AWS_S3_BUCKET;
   const region = process.env.AWS_REGION;
@@ -74,8 +65,8 @@ const initialize = () => {
   }
 
   try {
-    // If access key & secret are provided, use explicit credentials.
-    // Otherwise, allow AWS SDK to automatically load EC2 / IAM Role credentials.
+                                                                     
+                                                                                 
     const s3Config = { region };
     if (accessKeyId && secretAccessKey) {
       s3Config.credentials = {
@@ -98,16 +89,12 @@ const initialize = () => {
   }
 };
 
-/**
- * Returns boolean state of S3 storage availability
- */
+                                                             
 const isCloudStorageEnabled = () => {
   return isStorageInitialized;
 };
 
-/**
- * Returns current health status of AWS S3 storage
- */
+                                                            
 const getStorageStatus = () => {
   if (!isStorageInitialized) {
     return {
@@ -125,9 +112,7 @@ const getStorageStatus = () => {
   };
 };
 
-/**
- * Generates an S3 Presigned URL for temporary access to private S3 objects
- */
+                                                                                     
 const getPresignedUrl = async (s3Key, expiresInSeconds = 3600) => {
   if (!isStorageInitialized) {
     throw new ApiError(500, "AWS S3 Storage service is not configured");
@@ -171,13 +156,13 @@ const UPLOAD_CONFIG = {
   kyc: {
     folder: "identity",
     allowedMimeTypes: ["image/jpeg", "image/png", "image/webp", "application/pdf"],
-    maxSizeBytes: 10 * 1024 * 1024, // 10MB
+    maxSizeBytes: 10 * 1024 * 1024,        
     isPrivate: true,
   },
   avatar: {
     folder: "avatars",
     allowedMimeTypes: ["image/jpeg", "image/png", "image/webp"],
-    maxSizeBytes: 5 * 1024 * 1024, // 5MB
+    maxSizeBytes: 5 * 1024 * 1024,       
     isPrivate: false,
   },
   company: {
@@ -190,7 +175,7 @@ const UPLOAD_CONFIG = {
       "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ],
-    maxSizeBytes: 15 * 1024 * 1024, // 15MB
+    maxSizeBytes: 15 * 1024 * 1024,        
     isPrivate: false,
     requiredRoles: ["founder", "admin"],
   },
@@ -204,7 +189,7 @@ const UPLOAD_CONFIG = {
       "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ],
-    maxSizeBytes: 15 * 1024 * 1024, // 15MB
+    maxSizeBytes: 15 * 1024 * 1024,        
     isPrivate: false,
   },
   pitchDeck: {
@@ -216,14 +201,14 @@ const UPLOAD_CONFIG = {
       "application/vnd.ms-powerpoint",
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ],
-    maxSizeBytes: 50 * 1024 * 1024, // 50MB
+    maxSizeBytes: 50 * 1024 * 1024,        
     isPrivate: true,
     requiredRoles: ["founder", "admin"],
   },
   courseMedia: {
     folder: "courses",
     allowedMimeTypes: ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm", "application/pdf"],
-    maxSizeBytes: 200 * 1024 * 1024, // 200MB
+    maxSizeBytes: 200 * 1024 * 1024,         
     isPrivate: false,
     requiredRoles: ["admin"],
   },
@@ -237,14 +222,12 @@ const UPLOAD_CONFIG = {
       "video/mp4",
       "audio/mpeg",
     ],
-    maxSizeBytes: 50 * 1024 * 1024, // 50MB
+    maxSizeBytes: 50 * 1024 * 1024,        
     isPrivate: false,
   },
 };
 
-/**
- * Generates an S3 Presigned PUT URL for direct frontend-to-S3 file uploads
- */
+                                                                                     
 const generateUploadPresignedUrl = async ({
   uploadType,
   fileName,
@@ -267,7 +250,7 @@ const generateUploadPresignedUrl = async ({
     );
   }
 
-  // Authorize User Role if required
+                                    
   if (config.requiredRoles && config.requiredRoles.length > 0) {
     const userRole = user?.role || "user";
     if (!config.requiredRoles.includes(userRole)) {
@@ -275,7 +258,7 @@ const generateUploadPresignedUrl = async ({
     }
   }
 
-  // Validate ContentType MIME type
+                                   
   const cleanContentType = String(contentType).toLowerCase().trim();
   if (!config.allowedMimeTypes.includes(cleanContentType)) {
     throw new ApiError(
@@ -284,7 +267,7 @@ const generateUploadPresignedUrl = async ({
     );
   }
 
-  // Validate Extension matches ContentType strictly
+                                                    
   const ext = path.extname(fileName).toLowerCase();
   const allowedExtensions = MIME_EXTENSION_MAP[cleanContentType];
   if (!ext || !allowedExtensions || !allowedExtensions.includes(ext)) {
@@ -294,14 +277,14 @@ const generateUploadPresignedUrl = async ({
     );
   }
 
-  // Generate Unique S3 Key using crypto.randomUUID()
+                                                     
   const userIdStr = user?._id ? user._id.toString() : "public";
   const baseName = path.basename(fileName, ext).replace(/[^a-zA-Z0-9_-]/g, "_");
   const uniqueKey = `uploads/${config.folder}/${userIdStr}/${crypto.randomUUID()}-${baseName}${ext}`;
 
   const bucket = process.env.AWS_S3_BUCKET;
   const region = process.env.AWS_REGION;
-  const expiresInSeconds = 900; // Fixed 15 minutes security expiry
+  const expiresInSeconds = 900;                                    
 
   const command = new PutObjectCommand({
     Bucket: bucket,
@@ -327,9 +310,7 @@ const generateUploadPresignedUrl = async ({
   }
 };
 
-/**
- * Verifies that an object exists in S3 and validates key ownership / folder prefix / actual ContentType / max size
- */
+                                                                                                                             
 const verifyS3Object = async (s3Key, expectedUploadType = null, userId = null) => {
   if (!isStorageInitialized) {
     throw new ApiError(500, "AWS S3 Storage service is not configured");
@@ -363,7 +344,7 @@ const verifyS3Object = async (s3Key, expectedUploadType = null, userId = null) =
     }
   }
 
-  // Strict ownership validation via exact expected prefix uploads/{folder}/{userId}/
+                                                                                     
   if (userId && expectedUploadType && UPLOAD_CONFIG[expectedUploadType]) {
     const expectedFolder = UPLOAD_CONFIG[expectedUploadType].folder;
     const userIdStr = userId.toString();
@@ -390,7 +371,7 @@ const verifyS3Object = async (s3Key, expectedUploadType = null, userId = null) =
   try {
     const headData = await s3Client.send(command);
 
-    // Validate actual S3 ContentType and ContentLength against upload configuration
+                                                                                    
     if (expectedUploadType && UPLOAD_CONFIG[expectedUploadType]) {
       const config = UPLOAD_CONFIG[expectedUploadType];
       const actualContentType = String(headData.ContentType || "").toLowerCase().trim();
@@ -424,9 +405,7 @@ const verifyS3Object = async (s3Key, expectedUploadType = null, userId = null) =
   }
 };
 
-/**
- * Uploads local Multer temporary file to AWS S3 bucket
- */
+                                                                 
 const uploadToS3 = async (filePath, s3Key, isPrivate = false, options = {}) => {
   if (!isStorageInitialized) {
     console.warn("⚠️ [AWS Storage] S3 service not initialized. Using local fallback.");
@@ -482,9 +461,7 @@ const uploadToS3 = async (filePath, s3Key, isPrivate = false, options = {}) => {
   }
 };
 
-/**
- * Deletes an object from AWS S3
- */
+                                          
 const deleteFromS3 = async (s3Key) => {
   if (!isStorageInitialized || !s3Key) {
     return;
@@ -506,9 +483,7 @@ const deleteFromS3 = async (s3Key) => {
   }
 };
 
-/**
- * Safe delete single object from S3 without throwing exceptions
- */
+                                                                          
 const safeDeleteFromS3 = async (s3Key) => {
   try {
     await deleteFromS3(s3Key);
@@ -517,9 +492,7 @@ const safeDeleteFromS3 = async (s3Key) => {
   }
 };
 
-/**
- * Safe delete multiple objects from S3
- */
+                                                 
 const safeDeleteManyFromS3 = async (s3KeysArray = []) => {
   if (!Array.isArray(s3KeysArray) || s3KeysArray.length === 0) return;
   for (const keyOrUrl of s3KeysArray) {
@@ -527,9 +500,7 @@ const safeDeleteManyFromS3 = async (s3KeysArray = []) => {
   }
 };
 
-/**
- * Streams private object content from S3 bucket
- */
+                                                          
 const streamFromS3 = async (s3Key) => {
   if (!isStorageInitialized) {
     throw new ApiError(500, "AWS S3 Storage service is not configured");

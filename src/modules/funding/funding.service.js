@@ -63,7 +63,7 @@ class FundingService {
       monthOverMonthGrowth = Number((((currFunding - prevFunding) / prevFunding) * 100).toFixed(2));
     }
 
-    // Latest timestamp across all records
+                                          
     const lastUpdated = records.reduce((latest, r) => {
       const ts = new Date(r.updatedAt || r.createdAt).getTime();
       return ts > latest ? ts : latest;
@@ -192,7 +192,7 @@ class FundingService {
       record.startupsFunded = Number(startupsFunded);
     }
 
-    // Check duplicate month/year conflict if changed
+                                                     
     const conflict = await FundingImpact.findOne({
       _id: { $ne: id },
       month: record.month,

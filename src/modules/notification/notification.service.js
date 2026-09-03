@@ -3,7 +3,7 @@ const User = require("../user/user.model");
 const ApiError = require("../../utils/ApiError");
 const { getAdmin } = require("../../config/firebase");
 
-// Push via FCM if configured
+                             
 const pushFCM = async (fcmToken, { title, body, data = {} }) => {
   const admin = getAdmin();
   if (!admin || !fcmToken) return;
@@ -21,8 +21,8 @@ const pushFCM = async (fcmToken, { title, body, data = {} }) => {
   }
 };
 
-// Map a notification type → the user preference key that gates it.
-// Types without an entry are always delivered (e.g. calls, system).
+                                                                   
+                                                                    
 const TYPE_TO_PREF = {
   like: "likes",
   save: "saves",
@@ -38,31 +38,31 @@ const TYPE_TO_PREF = {
   account_security: "accountSecurity",
 };
 
-// Main entry — fan out to in-app socket, FCM, and DB
+                                                     
 const send = async (userId, payload) => {
   const { type, title, body = "", data = {} } = payload;
 
-  // Respect the recipient's notification preferences (default on)
+                                                                  
   const prefKey = TYPE_TO_PREF[type];
   if (prefKey) {
     try {
       const recipient = await User.findById(userId).select("notificationPrefs");
       if (recipient?.notificationPrefs?.[prefKey] === false) {
-        return null; // user opted out of this notification type
+        return null;                                            
       }
     } catch {}
   }
 
   const notif = await Notification.create({ userId, type, title, body, data });
 
-  // Realtime via Socket.io
+                           
   try {
     const { getIO } = require("../../socket");
     const io = getIO();
     if (io) io.to(userId.toString()).emit("notification", notif);
   } catch {}
 
-  // Push notification
+                      
   const user = await User.findById(userId).select("fcmToken");
   if (user?.fcmToken) {
     pushFCM(user.fcmToken, { title, body, data: { ...data, type } });

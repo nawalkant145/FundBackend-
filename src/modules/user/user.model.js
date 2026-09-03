@@ -53,7 +53,7 @@ const userSchema = new mongoose.Schema(
       },
       validate: {
         validator: function (v) {
-          if (!v) return true; // optional in schema
+          if (!v) return true;                      
           return require("../auth/auth.validation").isValidPhone(v, this.country);
         },
         message: "Please enter a valid phone number for the selected country.",
@@ -62,7 +62,7 @@ const userSchema = new mongoose.Schema(
     country: { type: String, default: "" },
     bio: { type: String, default: "" },
 
-    // Verification Levels & Badges (Canonical fields: emailVerified, phoneVerified, identityVerified, verificationLevel)
+                                                                                                                         
     emailVerified: { type: Boolean, default: false },
     phoneVerified: { type: Boolean, default: false },
     identityVerified: { type: Boolean, default: false, index: true },
@@ -73,11 +73,11 @@ const userSchema = new mongoose.Schema(
       max: 5,
       index: true,
     },
-    isVerified: { type: Boolean, default: false }, // legacy alias for blue tick
-    verifiedBadge: { type: Boolean, default: false }, // Level 1+ Personal ID verified blue tick
+    isVerified: { type: Boolean, default: false },                              
+    verifiedBadge: { type: Boolean, default: false },                                           
     verifiedAt: { type: Date },
 
-    // Launch-Level Multi-Badge State Flags
+                                           
     isBusinessVerified: { type: Boolean, default: false, index: true },
     isOrganizationVerified: { type: Boolean, default: false, index: true },
     isInvestorProfileVerified: { type: Boolean, default: false, index: true },
@@ -88,7 +88,7 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Dynamic Summary Status Flags
+                                   
     kycStatus: {
       type: String,
       enum: ["none", "pending", "under_review", "approved", "rejected", "resubmitted", "info_requested", "digilocker_pending", "manual_review"],
@@ -114,17 +114,17 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
 
-    // OTPs (hashed)
+                    
     emailOtpHash: { type: String, select: false },
     emailOtpExpires: { type: Date, select: false },
     phoneOtpHash: { type: String, select: false },
     phoneOtpExpires: { type: Date, select: false },
 
-    // Password reset
+                     
     passwordResetTokenHash: { type: String, select: false },
     passwordResetExpires: { type: Date, select: false },
 
-    // Founder fields
+                     
     companyName: { type: String, default: "" },
     industry: { type: String, default: "" },
     fundingStage: {
@@ -140,7 +140,7 @@ const userSchema = new mongoose.Schema(
     activePitchId: { type: mongoose.Schema.Types.ObjectId, ref: "Video" },
     openToConnect: { type: Boolean, default: true },
 
-    // Investor fields
+                      
     investorType: {
       type: String,
       enum: ["", "individual", "angel", "vc", "family-office"],
@@ -156,7 +156,7 @@ const userSchema = new mongoose.Schema(
     portfolioCompanies: [{ type: String }],
     investmentThesis: { type: String, default: "" },
 
-    // Documents (KYC Legacy & Extended)
+                                        
     documents: {
       referenceId: { type: String, default: "" },
       panCard: { type: String, default: "" },
@@ -172,27 +172,27 @@ const userSchema = new mongoose.Schema(
       reviewedAt: { type: Date },
     },
 
-    // Block list
+                 
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 
-    // Follow system
+                    
     followers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     following: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     followersCount: { type: Number, default: 0 },
     followingCount: { type: Number, default: 0 },
 
-    // Notification preferences (per-channel toggles; default all on)
+                                                                     
     notificationPrefs: {
       type: Object,
       default: {},
     },
-    // Privacy preferences (UI toggles)
+                                       
     privacyPrefs: {
       type: Object,
       default: {},
     },
 
-    // Subscription (EXPGLO Pro)
+                                
     subscription: {
       plan: { type: String, enum: ["free", "pro"], default: "free" },
       status: {
@@ -203,29 +203,29 @@ const userSchema = new mongoose.Schema(
       startedAt: { type: Date },
       expiresAt: { type: Date },
     },
-    // Free-tier monthly chat quota (investors)
+                                               
     freeChatsUsedThisMonth: { type: Number, default: 0 },
     chatQuotaResetAt: { type: Date },
 
-    // Auth
+           
     refreshToken: { type: String, select: false },
     fcmToken: { type: String, default: "" },
     loginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date },
 
-    // Status
+             
     lastSeen: { type: Date, default: Date.now },
     isOnline: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
     isBanned: { type: Boolean, default: false },
     banReason: { type: String, default: "" },
 
-    // IP / device tracking (last login)
+                                        
     lastLoginIp: { type: String, default: "" },
     lastLoginUserAgent: { type: String, default: "" },
     lastLoginAt: { type: Date },
 
-    // Temporary suspension (auto-expires)
+                                          
     suspendedUntil: { type: Date, default: null },
     suspensionReason: { type: String, default: "" },
   },
@@ -234,9 +234,9 @@ const userSchema = new mongoose.Schema(
 
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
-  // Guard: if the password is already a valid bcrypt hash, do not re-hash it.
-  // This allows signupSession.service.js to pass a pre-hashed password when
-  // finalizing account creation — bcrypt hashes start with $2a$, $2b$, or $2y$.
+                                                                              
+                                                                            
+                                                                                
   const BCRYPT_HASH_RE = /^\$2[ayb]\$\d{2}\$.{53}$/;
   if (BCRYPT_HASH_RE.test(this.password)) return next();
   this.password = await bcrypt.hash(this.password, 12);
@@ -244,7 +244,7 @@ userSchema.pre("save", async function (next) {
 });
 
 
-// Mongoose virtuals for legacy field names (single source of truth: emailVerified, phoneVerified, identityVerified)
+                                                                                                                    
 userSchema.virtual("isEmailVerified")
   .get(function () { return !!this.emailVerified; })
   .set(function (val) { this.emailVerified = !!val; });
@@ -274,7 +274,7 @@ userSchema.methods.toSafeJSON = function () {
   delete obj.passwordResetTokenHash;
   delete obj.passwordResetExpires;
 
-  // Guarantee canonical and legacy field names are both present and synchronized
+                                                                                 
   obj.emailVerified = !!(this.emailVerified);
   obj.phoneVerified = !!(this.phoneVerified);
   obj.identityVerified = !!(this.identityVerified);
@@ -286,11 +286,11 @@ userSchema.methods.toSafeJSON = function () {
   return obj;
 };
 
-// Helper — recalculate verificationLevel & profileCompleteness dynamically
+                                                                           
 userSchema.methods.recomputeVerificationLevel = function () {
-  let lvl = 1; // Default basic account (Email & Mobile OTP verified)
+  let lvl = 1;                                                       
   
-  // Identity Verification (Level 2)
+                                    
   if (this.kycStatus === "approved" || this.documents?.status === "approved" || this.identityVerified) {
     lvl = 2;
     this.identityVerified = true;
@@ -303,7 +303,7 @@ userSchema.methods.recomputeVerificationLevel = function () {
     this.isVerified = false;
   }
 
-  // Founder Company Verification (Level 3)
+                                           
   if (this.role === "founder") {
     if (this.companyVerificationStatus === "approved" || this.isBusinessVerified) {
       this.isBusinessVerified = true;
@@ -313,7 +313,7 @@ userSchema.methods.recomputeVerificationLevel = function () {
     }
   }
 
-  // Investor Profile Verification & Organization Verification (Level 4)
+                                                                        
   if (this.role === "investor") {
     if (this.investmentVerificationStatus === "approved" || this.isInvestorProfileVerified) {
       this.isInvestorProfileVerified = true;
@@ -325,7 +325,7 @@ userSchema.methods.recomputeVerificationLevel = function () {
     }
   }
 
-  // Level 5: Risk Compliance (Manual hold or critical anomaly)
+                                                               
   if (this.riskLevel === "critical" || this.riskLevel === "high") {
     lvl = 5;
   }
@@ -358,12 +358,12 @@ userSchema.methods.calculateProfileCompleteness = function () {
   return this.profileCompleteness;
 };
 
-// Helper — is the account currently suspended (and not yet expired)?
+                                                                     
 userSchema.methods.isSuspended = function () {
   return !!(this.suspendedUntil && this.suspendedUntil > new Date());
 };
 
-// Helper — does the user have an active Pro subscription right now?
+                                                                    
 userSchema.methods.isProActive = function () {
   return !!(
     this.subscription &&

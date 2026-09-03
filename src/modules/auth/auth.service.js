@@ -22,7 +22,7 @@ const issueTokens = async (user, { save = true } = {}) => {
   const payload = { _id: user._id.toString(), role: user.role };
   const accessToken = generateAccessToken(payload);
   const refreshToken = generateRefreshToken(payload);
-  user.refreshToken = hashRefresh(refreshToken); // store hash, not raw
+  user.refreshToken = hashRefresh(refreshToken);                       
   if (save) {
     await user.save({ validateBeforeSave: false });
   }
@@ -47,15 +47,15 @@ const registerUser = async ({
   preferredIndustries,
   preferredStages,
   investmentThesis,
-  // BUG-02 FIX: Accept explicit emailVerified flag from the controller.
-  // The service must NOT hardcode isEmailVerified:true — only the controller
-  // can assert this after confirming the Redis OTP key was present.
+                                                                        
+                                                                             
+                                                                    
   emailVerified = false,
 }) => {
   email = email.toLowerCase().trim();
   username = (username || "").toLowerCase().trim();
 
-  // Respect the global "signups enabled" feature flag
+                                                      
   try {
     const settingsService = require("../settings/settings.service");
     const settings = await settingsService.getSettings();
@@ -66,7 +66,7 @@ const registerUser = async ({
     if (e.statusCode === 403) throw e;
   }
 
-  // Field-specific duplicate checks → clear messages for the UI
+                                                                
   if (await User.findOne({ email })) {
     throw new ApiError(409, "Email already registered", {
       field: "email",
@@ -123,7 +123,7 @@ const registerUser = async ({
   return { user: user.toSafeJSON(), ...tokens };
 };
 
-// Check whether a username / email / phone is already taken.
+                                                             
 const checkAvailability = async ({ username, email, phone, country }) => {
   const { isValidEmail, isValidPhone, normalizePhone } = require("./auth.validation");
   const result = {};
@@ -225,7 +225,7 @@ const loginUser = async ({ identifier, email, password, role, clientInfo }) => {
   }
 
   const tSaveStart = performance.now();
-  // Consolidate memory updates before executing a single DB save operation
+                                                                           
   user.loginAttempts = 0;
   user.lockUntil = undefined;
   user.lastSeen = new Date();
@@ -268,13 +268,13 @@ const refreshAccessToken = async (refreshToken) => {
   return { user: user.toSafeJSON(), ...tokens };
 };
 
-// ─── Email OTP ─────────────────────────────────
+                                                  
 
-// Pre-register: send OTP to email before account exists (for signup verification)
+                                                                                  
 const sendPreRegisterOtp = async (email) => {
   if (!email) throw new ApiError(400, "Email required");
-  // BUG-02 FIX: Normalize email before forming the Redis key so that
-  // 'Test@Example.COM' and 'test@example.com' resolve to the same key.
+                                                                     
+                                                                       
   email = email.toLowerCase().trim();
   const existing = await User.findOne({ email });
   if (existing) throw new ApiError(409, "Email already registered");
@@ -283,14 +283,14 @@ const sendPreRegisterOtp = async (email) => {
   const hash = await hashOtp(otp);
   const expires = new Date(Date.now() + OTP_EXPIRY_MS);
 
-  // Store in Redis temporarily (not in DB since user doesn't exist yet)
+                                                                        
   const { getClient } = require("../../config/redis");
   const redis = getClient();
   await redis.set(
     `preregister:${email}`,
     JSON.stringify({ otpHash: hash, expires: expires.toISOString() }),
     "EX",
-    600, // 10 minutes
+    600,              
   );
 
   if (process.env.NODE_ENV !== "production") {
@@ -313,10 +313,10 @@ const sendPreRegisterOtp = async (email) => {
   };
 };
 
-// Verify pre-register OTP (before account creation)
+                                                    
 const verifyPreRegisterOtp = async (email, otp) => {
   if (!email || !otp) throw new ApiError(400, "Email and OTP required");
-  // BUG-02 FIX: Normalize email to match the key used in sendPreRegisterOtp.
+                                                                             
   email = email.toLowerCase().trim();
 
   const { getClient } = require("../../config/redis");
@@ -333,8 +333,8 @@ const verifyPreRegisterOtp = async (email, otp) => {
   const ok = await compareOtp(otp, otpHash);
   if (!ok) throw new ApiError(400, "Invalid OTP");
 
-  // Mark as verified in Redis (will be checked during register)
-  await redis.set(`preregister:verified:${email}`, "1", "EX", 1800); // 30 min to complete signup
+                                                                
+  await redis.set(`preregister:verified:${email}`, "1", "EX", 1800);                             
   await redis.del(`preregister:${email}`);
 
   return { verified: true };
@@ -354,7 +354,7 @@ const sendEmailOtp = async (userId) => {
   user.emailOtpExpires = new Date(Date.now() + OTP_EXPIRY_MS);
   await user.save({ validateBeforeSave: false });
 
-  // Always log OTP in dev so you can test without real email delivery
+                                                                      
   if (process.env.NODE_ENV !== "production") {
     console.log(`\n📧 EMAIL OTP for ${user.email}: ${otp}\n`);
   }
@@ -384,8 +384,8 @@ const verifyEmailOtp = async (userId, otp) => {
   if (!user.emailOtpHash || !user.emailOtpExpires) {
     throw new ApiError(400, "No OTP requested");
   }
-  // BUG-SERVICE-02 FIX: Clean up the expired OTP from the DB before throwing,
-  // so a user can immediately request a fresh OTP without stale data blocking them.
+                                                                              
+                                                                                    
   if (user.emailOtpExpires < new Date()) {
     user.emailOtpHash = undefined;
     user.emailOtpExpires = undefined;
@@ -403,12 +403,12 @@ const verifyEmailOtp = async (userId, otp) => {
   return user.toSafeJSON();
 };
 
-// ─── Phone OTP ─────────────────────────────────
+                                                  
 const sendPhoneOtp = async (userId, phone) => {
   if (!phone) throw new ApiError(400, "Phone number required");
-  // BUG-SERVICE-04 FIX: Normalize phone (strip spaces, dashes, parentheses)
-  // before storing and comparing, so '+91 98765-43210' and '+919876543210'
-  // are treated as the same number.
+                                                                            
+                                                                           
+                                    
   phone = phone.replace(/[\s\-()]/g, "");
   const user = await User.findById(userId).select(
     "+phoneOtpHash +phoneOtpExpires",
@@ -456,8 +456,8 @@ const verifyPhoneOtp = async (userId, otp) => {
   if (!user.phoneOtpHash || !user.phoneOtpExpires) {
     throw new ApiError(400, "No OTP requested");
   }
-  // BUG-SERVICE-03 FIX: Clean up the expired OTP from the DB before throwing,
-  // so a user can immediately request a fresh OTP without stale data blocking them.
+                                                                              
+                                                                                    
   if (user.phoneOtpExpires < new Date()) {
     user.phoneOtpHash = undefined;
     user.phoneOtpExpires = undefined;
@@ -475,14 +475,14 @@ const verifyPhoneOtp = async (userId, otp) => {
   return user.toSafeJSON();
 };
 
-// ─── Password Reset ────────────────────────────
+                                                  
 const forgotPassword = async (email) => {
-  // BUG-04 FIX: Normalize email before querying. MongoDB string matching is
-  // case-sensitive, so 'Test@Example.COM' would NOT match the stored
-  // lowercase value 'test@example.com' without this normalization.
+                                                                            
+                                                                     
+                                                                   
   email = (email || "").toLowerCase().trim();
   const user = await User.findOne({ email });
-  // Don't leak whether user exists
+                                   
   if (!user) return { sent: true };
 
   const rawToken = crypto.randomBytes(32).toString("hex");
@@ -504,7 +504,7 @@ const forgotPassword = async (email) => {
     });
   } catch (err) {
     console.error("Failed to send password reset email:", err);
-    // Don't leak details, return sent true or throw ApiError
+                                                             
   }
   return { sent: true };
 };
@@ -516,8 +516,8 @@ const resetPassword = async ({ email, token, newPassword }) => {
   if (newPassword.length < 8) {
     throw new ApiError(400, "Password must be at least 8 characters");
   }
-  // BUG-SERVICE-01 FIX: Normalize email before the DB lookup. Without this,
-  // 'Test@EXAMPLE.COM' won't match the stored lowercase 'test@example.com'.
+                                                                            
+                                                                            
   email = (email || "").toLowerCase().trim();
 
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");

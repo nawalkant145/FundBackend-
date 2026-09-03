@@ -48,12 +48,12 @@ const list = async ({ actorId, action, from, to, limit = 50, cursor }) => {
   };
 };
 
-// Distinct action types — for the filter dropdown
+                                                  
 const actionTypes = async () => {
   return AuditLog.distinct("action");
 };
 
-// Export filtered audit logs as CSV
+                                    
 const exportCsv = async ({ actorId, action, from, to } = {}) => {
   const q = {};
   if (actorId) q.actorId = actorId;

@@ -40,7 +40,7 @@ const expressInterest = async (
     throw new ApiError(403, "Verify your phone before expressing interest");
   }
 
-  // 1. Check if an Investment document already exists for (founderId, investorId, videoId)
+                                                                                           
   let inv = await Investment.findOne({
     founderId: resolvedFounderId,
     investorId,
@@ -48,7 +48,7 @@ const expressInterest = async (
   });
 
   if (inv) {
-    // If the existing deal is ALREADY paid & completed:
+                                                        
     if (inv.status === "paid" || inv.stage === "completed") {
       throw new ApiError(409, "You have already invested in this startup.", {
         investmentId: inv._id.toString(),
@@ -56,13 +56,13 @@ const expressInterest = async (
       });
     }
 
-    // If deal is pending / interested / negotiating / agreed: update terms
+                                                                           
     if (amount !== undefined) inv.amount = amount;
     if (equity !== undefined) inv.equity = equity;
     if (terms !== undefined) inv.terms = terms;
     await inv.save();
   } else {
-    // Create new Investment
+                            
     try {
       inv = await Investment.create({
         founderId: resolvedFounderId,
@@ -126,7 +126,7 @@ const expressInterest = async (
     equity: freshInv?.equity,
   });
 
-  // Ensure Founder Interest Notification is sent idempotently
+                                                              
   try {
     const Notification = require("../notification/notification.model");
     const notif = require("../notification/notification.service");
@@ -200,7 +200,7 @@ const updateStage = async (investmentId, userId, stage) => {
   inv.stage = stage;
   await inv.save();
 
-  // Notify the other party
+                           
   if (oldStage !== stage) {
     try {
       const notif = require("../notification/notification.service");
@@ -248,7 +248,7 @@ const createPaymentOrder = async (investmentId, userId) => {
   if (!razorpay) throw new ApiError(500, "Payment gateway not configured");
 
   const order = await razorpay.orders.create({
-    amount: Math.round(inv.amount * 100), // INR → paise
+    amount: Math.round(inv.amount * 100),               
     currency: "INR",
     receipt: `inv_${inv._id}`,
     notes: {
@@ -273,7 +273,7 @@ const createPaymentOrder = async (investmentId, userId) => {
   };
 };
 
-// Idempotent — re-runs safely return the already-paid record
+                                                             
 const verifyPayment = async ({
   investmentId,
   razorpayOrderId,
@@ -293,7 +293,7 @@ const verifyPayment = async ({
     currentStatus: inv.status,
   });
 
-  // Idempotency: already verified — return as-is
+                                                 
   if (inv.status === "paid" && inv.razorpayPaymentId === razorpayPaymentId) {
     return inv;
   }
@@ -313,7 +313,7 @@ const verifyPayment = async ({
     throw new ApiError(400, "Invalid payment signature");
   }
 
-  // Atomic transition — set paid, completed, paidAt
+                                                    
   const updated = await Investment.findOneAndUpdate(
     { _id: inv._id, status: { $ne: "paid" } },
     {
@@ -337,19 +337,19 @@ const verifyPayment = async ({
     stage: finalInv.stage,
   });
 
-  // Bump aggregates exactly once
+                                 
   await User.findByIdAndUpdate(finalInv.investorId, {
     $inc: { totalInvested: finalInv.amount },
   });
 
-  // Notify founder & investor idempotently
+                                           
   try {
     const Notification = require("../notification/notification.model");
     const notif = require("../notification/notification.service");
     const investor = await User.findById(finalInv.investorId).select("name avatar");
     const founder = await User.findById(finalInv.founderId).select("name avatar");
 
-    // Check if payment notification was already sent for this investment
+                                                                         
     const existingNotif = await Notification.findOne({
       userId: finalInv.founderId,
       type: "investment",
@@ -393,7 +393,7 @@ const verifyPayment = async ({
       });
     }
 
-    // Also notify investor
+                           
     notif
       .send(finalInv.investorId, {
         type: "investment",
@@ -411,8 +411,8 @@ const verifyPayment = async ({
   return finalInv;
 };
 
-// Razorpay webhook — server-to-server confirmation
-// Configure in Razorpay dashboard: Settings → Webhooks
+                                                   
+                                                       
 const handleWebhook = async (rawBody, signatureHeader) => {
   const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
   if (!secret) {
@@ -455,7 +455,7 @@ const handleWebhook = async (rawBody, signatureHeader) => {
           $inc: { totalInvested: inv.amount },
         });
 
-        // Also notify founder on webhook payment capture
+                                                         
         try {
           const notif = require("../notification/notification.service");
           const investor = await User.findById(inv.investorId).select("name avatar");

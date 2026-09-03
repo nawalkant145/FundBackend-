@@ -45,20 +45,20 @@ const messageSchema = new mongoose.Schema(
       required: true,
     },
     message: { type: String, default: "" },
-    text: { type: String, default: "" }, // Legacy compatibility alias
+    text: { type: String, default: "" },                              
     messageType: {
       type: String,
       enum: ["text", "image", "video", "audio", "document", "link", "system"],
       default: "text",
     },
-    type: { type: String, default: "text" }, // Legacy compatibility alias
+    type: { type: String, default: "text" },                              
     attachment: {
       url: { type: String, default: "" },
       name: { type: String, default: "" },
       size: { type: Number, default: 0 },
       mimeType: { type: String, default: "" },
     },
-    fileUrl: { type: String, default: "" }, // Legacy compatibility alias
+    fileUrl: { type: String, default: "" },                              
     status: {
       type: String,
       enum: ["sent", "delivered", "seen"],
@@ -70,7 +70,7 @@ const messageSchema = new mongoose.Schema(
     replyTo: { type: mongoose.Schema.Types.ObjectId, ref: "Message", default: null },
     deletedFor: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     deletedEveryone: { type: Boolean, default: false },
-    isDeleted: { type: Boolean, default: false }, // Legacy compatibility alias
+    isDeleted: { type: Boolean, default: false },                              
     edited: { type: Boolean, default: false },
   },
   { timestamps: true },

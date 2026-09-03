@@ -74,31 +74,31 @@ const courseMediaFilter = (req, file, cb) => {
 const uploadImage = multer({
   storage,
   fileFilter: imageFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: { fileSize: 5 * 1024 * 1024 },       
 });
 
 const uploadVideo = multer({
   storage,
   fileFilter: videoFilter,
-  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
+  limits: { fileSize: 200 * 1024 * 1024 },         
 });
 
 const uploadDocument = multer({
   storage,
   fileFilter: documentFilter,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 10 * 1024 * 1024 },        
 });
 
 const uploadChatAttachment = multer({
   storage,
   fileFilter: chatAttachmentFilter,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  limits: { fileSize: 50 * 1024 * 1024 },        
 });
 
 const uploadCourseMedia = multer({
   storage,
   fileFilter: courseMediaFilter,
-  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
+  limits: { fileSize: 200 * 1024 * 1024 },         
 });
 
 module.exports = {

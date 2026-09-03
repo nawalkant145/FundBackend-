@@ -21,7 +21,7 @@ const registerForEvent = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, result, "Event registration successful"));
 });
 
-// Admin Controllers
+                    
 const createEvent = asyncHandler(async (req, res) => {
   const event = await eventService.createEvent(req.user._id, req.body);
   res.json(new ApiResponse(201, { event }, "Event created successfully"));

@@ -1,7 +1,7 @@
 const ApiError = require("../utils/ApiError");
 
-// Usage: authorize('founder'), authorize('investor'), authorize('admin'),
-// or authorize('founder', 'investor') for either.
+                                                                          
+                                                  
 const authorize = (...allowedRoles) => {
   return (req, res, next) => {
     if (!req.user) {
@@ -19,7 +19,7 @@ const authorize = (...allowedRoles) => {
   };
 };
 
-// Verification level guard — e.g. requireVerificationLevel(2)
+                                                              
 const requireVerificationLevel = (minLevel) => {
   return (req, res, next) => {
     if (!req.user) {

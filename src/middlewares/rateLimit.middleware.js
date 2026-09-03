@@ -1,7 +1,7 @@
 const rateLimit = require("express-rate-limit");
 
-// Global limiter — generous ceiling for an interactive SPA (feeds, comments,
-// availability checks, etc. all hit /api). Still protects against abuse.
+                                                                             
+                                                                         
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 600,
@@ -13,8 +13,8 @@ const globalLimiter = rateLimit({
   },
 });
 
-// Auth limiter for login/register — only failed attempts count, so a user
-// who logs in / registers successfully isn't penalised.
+                                                                          
+                                                        
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
@@ -27,7 +27,7 @@ const authLimiter = rateLimit({
   },
 });
 
-// OTP SEND limiter — sends trigger an email/SMS, so keep these protected.
+                                                                          
 const otpLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 8,
@@ -40,9 +40,9 @@ const otpLimiter = rateLimit({
   },
 });
 
-// OTP VERIFY limiter — verifying is cheap (no email/SMS), so be lenient and
-// only count failed attempts. This stops a few mistyped codes from locking a
-// user out while still blocking brute-force guessing.
+                                                                            
+                                                                             
+                                                      
 const otpVerifyLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 30,

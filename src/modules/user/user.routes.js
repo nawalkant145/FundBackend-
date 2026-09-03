@@ -40,7 +40,7 @@ router.post("/block/:userId", c.blockUser);
 router.delete("/block/:userId", c.unblockUser);
 router.delete("/account", c.deleteAccount);
 
-// Follow system
+                
 router.post("/follow/:userId", c.followUser);
 router.get("/followers/:userId?", c.getFollowers);
 router.get("/following/:userId?", c.getFollowingList);

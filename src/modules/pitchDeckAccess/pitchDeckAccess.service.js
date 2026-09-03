@@ -27,7 +27,7 @@ const request = async (investorId, founderId, message) => {
     req.message = message || req.message;
     await req.save();
   }
-  // Notify founder
+                   
   try {
     const notif = require("../notification/notification.service");
     const investor = await User.findById(investorId).select("name");

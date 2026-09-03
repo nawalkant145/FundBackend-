@@ -1,6 +1,6 @@
 const digilockerConfig = require("../config/digilocker.config");
 
-// Normalizes a name for comparison: uppercase, collapse whitespace, strip punctuation.
+                                                                                       
 const normalizeName = (name = "") =>
   name
     .toString()
@@ -9,7 +9,7 @@ const normalizeName = (name = "") =>
     .replace(/[.,'’-]/g, "")
     .replace(/\s+/g, " ");
 
-// Normalizes a date of birth to YYYY-MM-DD regardless of incoming format.
+                                                                          
 const normalizeDob = (dob) => {
   if (!dob) return "";
   const d = new Date(dob);
@@ -17,7 +17,7 @@ const normalizeDob = (dob) => {
   return d.toISOString().slice(0, 10);
 };
 
-// Jaro similarity — foundation for Jaro-Winkler.
+                                                 
 const jaro = (a, b) => {
   if (a === b) return 1;
   const aLen = a.length;
@@ -55,7 +55,7 @@ const jaro = (a, b) => {
   return (matches / aLen + matches / bLen + (matches - transpositions) / matches) / 3;
 };
 
-// Jaro-Winkler adds a prefix bonus for strings that match at the start.
+                                                                        
 const jaroWinkler = (a, b, prefixScale = 0.1) => {
   const jaroScore = jaro(a, b);
   let prefixLen = 0;
@@ -67,11 +67,7 @@ const jaroWinkler = (a, b, prefixScale = 0.1) => {
   return jaroScore + prefixLen * prefixScale * (1 - jaroScore);
 };
 
-/**
- * Compares account-on-file identity data against DigiLocker-retrieved data.
- * Returns a score (0-100), a pass/fail verdict, and per-field detail for the
- * admin review UI when the match falls below threshold.
- */
+                                                                                                                                                                                                                               
 const matchIdentity = ({ accountName, accountDob, digilockerName, digilockerDob }) => {
   const normAccountName = normalizeName(accountName);
   const normDigilockerName = normalizeName(digilockerName);

@@ -3,9 +3,7 @@ const ApiError = require("../../utils/ApiError");
 
 let razorpayInstance = null;
 
-/**
- * Get lazy-initialized Razorpay client instance
- */
+                                                          
 const getRazorpay = () => {
   if (razorpayInstance) return razorpayInstance;
   if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
@@ -19,13 +17,7 @@ const getRazorpay = () => {
   return razorpayInstance;
 };
 
-/**
- * Create a new Razorpay order server-side
- * @param {number} amountInSubunits Amount in smallest currency unit (e.g. paise)
- * @param {string} currency Currency code (default "INR")
- * @param {string} receipt Receipt string identifier
- * @param {object} notes Custom metadata key-value pairs
- */
+                                                                                                                                                                                                                                                                                                                  
 const createOrder = async (amountInSubunits, currency = "INR", receipt = "", notes = {}) => {
   const rzp = getRazorpay();
   try {
@@ -37,7 +29,7 @@ const createOrder = async (amountInSubunits, currency = "INR", receipt = "", not
     });
     return order;
   } catch (err) {
-    // Log detailed diagnostic information server-side without exposing key secrets
+                                                                                   
     const failureDetail = err.error?.description || err.error?.reason || err.message || "Unknown Razorpay error";
     const failureCode = err.error?.code || err.statusCode || "RAZORPAY_ERROR";
     console.error(`[Razorpay Order Error] Code: ${failureCode} | Detail: ${failureDetail}`);
@@ -49,12 +41,7 @@ const createOrder = async (amountInSubunits, currency = "INR", receipt = "", not
   }
 };
 
-/**
- * Verify Razorpay payment signature using HMAC SHA256
- * @param {string} storedOrderId Order ID stored on backend server
- * @param {string} razorpayPaymentId Payment ID returned by Razorpay Checkout
- * @param {string} razorpaySignature Signature returned by Razorpay Checkout
- */
+                                                                                                                                                                                                                                                                                                 
 const verifySignature = (storedOrderId, razorpayPaymentId, razorpaySignature) => {
   if (!storedOrderId || !razorpayPaymentId || !razorpaySignature) return false;
   const secret = process.env.RAZORPAY_KEY_SECRET;
@@ -68,27 +55,19 @@ const verifySignature = (storedOrderId, razorpayPaymentId, razorpaySignature) =>
   return expected === razorpaySignature;
 };
 
-/**
- * Fetch payment details from Razorpay REST API
- */
+                                                         
 const fetchPayment = async (paymentId) => {
   const rzp = getRazorpay();
   return rzp.payments.fetch(paymentId);
 };
 
-/**
- * Fetch order details from Razorpay REST API
- */
+                                                       
 const fetchOrder = async (orderId) => {
   const rzp = getRazorpay();
   return rzp.orders.fetch(orderId);
 };
 
-/**
- * Verify Razorpay Webhook signature against RAW request body
- * @param {Buffer|string} rawBody Raw request payload
- * @param {string} signatureHeader Value from X-Razorpay-Signature header
- */
+                                                                                                                                                                                                         
 const verifyWebhookSignature = (rawBody, signatureHeader) => {
   const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
   if (!secret || !signatureHeader) return false;

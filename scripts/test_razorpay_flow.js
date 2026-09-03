@@ -13,7 +13,7 @@ const ApiError = require("../src/utils/ApiError");
 async function runTests() {
   console.log("=== STARTING RAZORPAY ORDER CREATION AUDIT TESTS ===");
   
-  // 1. Connect to MongoDB
+                          
   const mongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/expglo_test";
   await mongoose.connect(mongoUri);
   console.log("✓ Connected to MongoDB");
@@ -22,11 +22,11 @@ async function runTests() {
   let testUserId = null;
 
   try {
-    // Clean up test fixtures
+                             
     await Course.deleteMany({ title: "TEST_AUDIT_COURSE" });
     await User.deleteMany({ email: "test_audit_user@example.com" });
 
-    // Create a mock user
+                         
     const testUser = await User.create({
       name: "Audit Test User",
       username: `audusr_${Date.now().toString(36)}`,
@@ -38,7 +38,7 @@ async function runTests() {
     testUserId = testUser._id;
     console.log("✓ Created test user:", testUserId);
 
-    // Create a mock published course
+                                     
     const testCourse = await Course.create({
       title: "TEST_AUDIT_COURSE",
       description: "Audit test course description",
@@ -51,7 +51,7 @@ async function runTests() {
     testCourseId = testCourse._id;
     console.log("✓ Created test published course:", testCourseId);
 
-    // TEST 1: Invalid course ID format
+                                       
     console.log("\n--- TEST 1: Invalid Course ID Format ---");
     try {
       await paymentService.createCourseOrder(testUser, "invalid_id_format");
@@ -64,7 +64,7 @@ async function runTests() {
       }
     }
 
-    // TEST 2: Non-existent Course ID
+                                     
     console.log("\n--- TEST 2: Non-existent Course ID ---");
     try {
       const nonExistentId = new mongoose.Types.ObjectId();
@@ -78,7 +78,7 @@ async function runTests() {
       }
     }
 
-    // TEST 3: Unpublished Course
+                                 
     console.log("\n--- TEST 3: Unpublished/Draft Course ---");
     const draftCourse = await Course.create({
       title: "TEST_AUDIT_COURSE_DRAFT",
@@ -102,7 +102,7 @@ async function runTests() {
       await Course.deleteOne({ _id: draftCourse._id });
     }
 
-    // TEST 4: Valid Authenticated Razorpay Order Creation
+                                                          
     console.log("\n--- TEST 4: Valid Authenticated Order Creation ---");
     const orderRes1 = await paymentService.createCourseOrder(testUser, testCourseId);
     console.log("Order Creation Result:", JSON.stringify(orderRes1, null, 2));
@@ -112,7 +112,7 @@ async function runTests() {
       console.error("FAIL: Invalid order creation output");
     }
 
-    // TEST 5: Pending Order Reuse (Preventing 409 Conflict)
+                                                            
     console.log("\n--- TEST 5: Repeated Order Request / Pending Order Reuse ---");
     const orderRes2 = await paymentService.createCourseOrder(testUser, testCourseId);
     if (orderRes2.success && orderRes2.order?.id === orderRes1.order.id && orderRes2.reusedPendingOrder) {
@@ -121,7 +121,7 @@ async function runTests() {
       console.error("FAIL: Did not reuse pending order ->", orderRes2);
     }
 
-    // TEST 6: Valid Guest Razorpay Order Creation
+                                                  
     console.log("\n--- TEST 6: Valid Guest Order Creation ---");
     const guestCourse = await Course.create({
       title: "TEST_AUDIT_COURSE_GUEST",
@@ -140,7 +140,7 @@ async function runTests() {
     }
     await Course.deleteOne({ _id: guestCourse._id });
 
-    // TEST 7: Already Enrolled User Purchase Attempt
+                                                     
     console.log("\n--- TEST 7: Enrolled User Re-purchase Attempt ---");
     await Enrollment.create({
       userId: testUserId,
@@ -160,7 +160,7 @@ async function runTests() {
       }
     }
 
-    // TEST 8: Webhook Signature Verification
+                                             
     console.log("\n--- TEST 8: Webhook Signature Verification ---");
     const testSecret = "test_webhook_secret_12345";
     process.env.RAZORPAY_WEBHOOK_SECRET = testSecret;
@@ -177,7 +177,7 @@ async function runTests() {
   } catch (err) {
     console.error("UNEXPECTED TEST ERROR:", err);
   } finally {
-    // Cleanup database test entries
+                                    
     if (testCourseId) await Course.deleteOne({ _id: testCourseId });
     if (testUserId) await User.deleteOne({ _id: testUserId });
     await Payment.deleteMany({ receipt: { $regex: /^rcpt_|^g_rcpt_/ } });

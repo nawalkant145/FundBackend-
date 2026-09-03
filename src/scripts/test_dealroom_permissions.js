@@ -4,13 +4,13 @@ const DealRoom = require("../modules/dealRoom/dealRoom.model");
 const dealRoomService = require("../modules/dealRoom/dealRoom.service");
 const Notification = require("../modules/notification/notification.model");
 
-// Mock Notification.create
+                           
 Notification.create = async (doc) => ({ _id: new mongoose.Types.ObjectId(), ...doc });
 
 async function runTests() {
   console.log("🚀 Starting Deal Room Permission Matrix Tests...\n");
 
-  // Create mock users in memory
+                                
   const founderAId = new mongoose.Types.ObjectId();
   const founderBId = new mongoose.Types.ObjectId();
   const investorId = new mongoose.Types.ObjectId();
@@ -23,7 +23,7 @@ async function runTests() {
     [unauthorizedUserId]: { _id: unauthorizedUserId, role: "founder", name: "Unauthorized User" },
   };
 
-  // Mock User.findById
+                       
   User.findById = (id) => {
     const u = mockUsers[id.toString()] || null;
     return {
@@ -32,7 +32,7 @@ async function runTests() {
     };
   };
 
-  // Mock DealRoom DB operations using in-memory store
+                                                      
   const db = [];
   
   DealRoom.findOne = async (query) => {
@@ -94,7 +94,7 @@ async function runTests() {
     }
   }
 
-  // --- TEST 1: Investor -> Founder (Direct Active) ---
+                                                        
   try {
     const room1 = await dealRoomService.createDealRoom(mockUsers[investorId], {
       founderId: founderAId,
@@ -105,10 +105,10 @@ async function runTests() {
     assert(false, `TEST 1 Failed: ${e.message}`);
   }
 
-  // Clear DB
+             
   db.length = 0;
 
-  // --- TEST 2: Founder -> Investor (Pending Acceptance) ---
+                                                             
   let room2;
   try {
     room2 = await dealRoomService.createDealRoom(mockUsers[founderAId], {
@@ -122,7 +122,7 @@ async function runTests() {
     assert(false, `TEST 2 Failed: ${e.message}`);
   }
 
-  // --- TEST 3: Investor Accepts Request ---
+                                             
   try {
     const accepted = await dealRoomService.acceptDealRoomRequest(room2._id, mockUsers[investorId]);
     assert(accepted.status === "active", "TEST 3: Target Investor accepts request -> status becomes ACTIVE");
@@ -130,10 +130,10 @@ async function runTests() {
     assert(false, `TEST 3 Failed: ${e.message}`);
   }
 
-  // Clear DB
+             
   db.length = 0;
 
-  // --- TEST 4: Investor Declines Request ---
+                                              
   try {
     const room4 = await dealRoomService.createDealRoom(mockUsers[founderAId], {
       founderId: founderAId,
@@ -145,10 +145,10 @@ async function runTests() {
     assert(false, `TEST 4 Failed: ${e.message}`);
   }
 
-  // Clear DB
+             
   db.length = 0;
 
-  // --- TEST 5: Founder -> Founder (Direct Active) ---
+                                                       
   try {
     const room5 = await dealRoomService.createDealRoom(mockUsers[founderAId], {
       founderId: founderAId,
@@ -160,22 +160,22 @@ async function runTests() {
     assert(false, `TEST 5 Failed: ${e.message}`);
   }
 
-  // Clear DB
+             
   db.length = 0;
 
-  // --- TEST 6: Security Bypass Check (Founder sending status="active") ---
+                                                                            
   try {
     const room6 = await dealRoomService.createDealRoom(mockUsers[founderAId], {
       founderId: founderAId,
       investorId: investorId,
-      status: "active", // Attacker attempt to bypass
+      status: "active",                              
     });
     assert(room6.status === "pending_acceptance", "TEST 6: Client-supplied status='active' is IGNORED by backend");
   } catch (e) {
     assert(false, `TEST 6 Failed: ${e.message}`);
   }
 
-  // --- TEST 7: Unauthorized User (Founder) tries to accept request ---
+                                                                        
   try {
     const reqRoom = await DealRoom.findOne({ status: "pending_acceptance" });
     await dealRoomService.acceptDealRoomRequest(reqRoom._id, mockUsers[founderAId]);
@@ -184,7 +184,7 @@ async function runTests() {
     assert(e.statusCode === 403, `TEST 7: Requesting founder acceptance blocked with 403 Forbidden ("${e.message}")`);
   }
 
-  // --- TEST 8: Unauthorized User tries to decline request ---
+                                                               
   try {
     const reqRoom = await DealRoom.findOne({ status: "pending_acceptance" });
     await dealRoomService.declineDealRoomRequest(reqRoom._id, mockUsers[unauthorizedUserId]);
@@ -193,7 +193,7 @@ async function runTests() {
     assert(e.statusCode === 403, `TEST 8: Unauthorized decline blocked with 403 Forbidden ("${e.message}")`);
   }
 
-  // --- TEST 9: Duplicate Active Deal Room ---
+                                               
   db.length = 0;
   try {
     await dealRoomService.createDealRoom(mockUsers[investorId], {
@@ -211,7 +211,7 @@ async function runTests() {
     assert(false, `TEST 9 Failed: ${e.message}`);
   }
 
-  // --- TEST 10: Duplicate Pending Request ---
+                                               
   db.length = 0;
   try {
     await dealRoomService.createDealRoom(mockUsers[founderAId], {

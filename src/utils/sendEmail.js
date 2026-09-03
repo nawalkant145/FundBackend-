@@ -30,7 +30,7 @@ const getTransporter = () => {
 const sendEmail = async ({ to, subject, html, text }) => {
   const gUser = process.env.GMAIL_USER || "expglobusiness@gmail.com";
 
-  // 1. Resend API fallback if RESEND_API_KEY is present
+                                                        
   const resend = getResend();
   if (resend) {
     try {
@@ -49,7 +49,7 @@ const sendEmail = async ({ to, subject, html, text }) => {
     }
   }
 
-  // 2. Gmail SMTP transport
+                            
   const transport = getTransporter();
   if (!transport) {
     console.log("📧 [DEV] Email skipped — no GMAIL credentials set in .env");

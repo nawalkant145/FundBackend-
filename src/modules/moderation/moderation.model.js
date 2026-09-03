@@ -1,10 +1,6 @@
 const mongoose = require("mongoose");
 
-/**
- * A moderation flag is raised automatically when user content
- * (pitch, comment, post) contains profanity or banned keywords.
- * Admins review the queue and resolve each flag.
- */
+                                                                                                                                                                                             
 const moderationFlagSchema = new mongoose.Schema(
   {
     contentType: {
@@ -24,9 +20,9 @@ const moderationFlagSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    // The original (uncensored) text that triggered the flag
+                                                             
     originalText: { type: String, default: "" },
-    // Which words/reason triggered it
+                                      
     matchedTerms: [{ type: String }],
     reason: {
       type: String,
